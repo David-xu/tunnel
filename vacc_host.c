@@ -309,16 +309,12 @@ static int vacc_host_send_data_udp(vacc_host_t *vacc_host, void *buf, uint32_t l
     return VACC_HOST_RET_OK;
 }
 
-static int vacc_host_recv_data_normal(vacc_host_t *vacc_host)
+static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
 {
     uint8_t buf[vacc_host->proto_abs.pkg_max_len];
     struct iovec iov;
     struct msghdr msgh;
     int ret, payload_len, left_size = vacc_host->proto_abs.pkg_max_len - vacc_host->proto_abs.head_len;
-
-    if (vacc_host->sock_fd < 0) {
-        return VACC_HOST_RET_INVALID_INST;
-    }
 
     memset(&msgh, 0, sizeof(msgh));
     iov.iov_base = (void *)buf;
@@ -379,27 +375,91 @@ retry:
     return VACC_HOST_RET_OK;
 }
 
-static int vacc_host_recv_data_udp(vacc_host_t *vacc_host)
+static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host)
 {
-    uint8_t buf[vacc_host->proto_abs.pkg_max_len];
-    vacc_host_addr_u addr;
-    socklen_t len;
+    uint8_t buf[64 * 1024];
     int ret;
 
-    memset(&addr, 0, sizeof(vacc_host_addr_u));
-    len = sizeof(struct sockaddr_in);
-    ret = recvfrom(vacc_host->sock_fd, buf, vacc_host->proto_abs.pkg_max_len, 0, (struct sockaddr *)&(addr.udp.addr), &len);
-    if (ret == -1) {
-        return VACC_HOST_RET_READMSG_FAILD;
+retry:
+    ret = read(vacc_host->sock_fd, buf, sizeof(buf));
+    if (ret == 0) {
+        return VACC_HOST_RET_PEERCLOSE;
+    } else if (ret < 0) {
+        if ((errno == EINTR) || (errno == EAGAIN)) {
+            usleep(100);
+            goto retry;
+        } else if (errno == ECONNRESET) {
+            /* peer close, just return 0 */
+            return VACC_HOST_RET_PEERCLOSE;
+        } else {
+            return VACC_HOST_RET_READMSG_FAILD;
+        }
     }
 
-    if (vacc_host->cb_recv_ex) {
-        vacc_host->cb_recv_ex(vacc_host, vacc_host->opaque, buf, ret, &addr);
-    } else {
+    /**/
+    if (vacc_host->cb_recv) {
         vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, ret);
+    } else {
+        printf("vacc_host_recv_data_normal() vacc_host->cb_recv == NULL.\n");
     }
 
     return VACC_HOST_RET_OK;
+}
+
+static int vacc_host_recv_data_normal(vacc_host_t *vacc_host)
+{
+    if (vacc_host->sock_fd < 0) {
+        return VACC_HOST_RET_INVALID_INST;
+    }
+
+    if (vacc_host->proto_abs.enable) {
+        return vacc_host_recv_data_normal_proto(vacc_host);
+    } else {
+        return vacc_host_recv_data_normal_without_proto(vacc_host);
+    }
+}
+
+static int vacc_host_recv_data_udp(vacc_host_t *vacc_host)
+{
+    
+    vacc_host_addr_u addr;
+    socklen_t len;
+    int ret;
+    memset(&addr, 0, sizeof(vacc_host_addr_u));
+
+    if (vacc_host->proto_abs.enable) {
+        uint8_t buf[vacc_host->proto_abs.pkg_max_len];
+        
+        len = sizeof(struct sockaddr_in);
+        ret = recvfrom(vacc_host->sock_fd, buf, vacc_host->proto_abs.pkg_max_len, 0, (struct sockaddr *)&(addr.udp.addr), &len);
+        if (ret == -1) {
+            return VACC_HOST_RET_READMSG_FAILD;
+        }
+
+        if (vacc_host->cb_recv_ex) {
+            vacc_host->cb_recv_ex(vacc_host, vacc_host->opaque, buf, ret, &addr);
+        } else {
+            vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, ret);
+        }
+
+        return VACC_HOST_RET_OK;
+    } else {
+        uint8_t buf[64 * 1024];
+
+        len = sizeof(struct sockaddr_in);
+        ret = recvfrom(vacc_host->sock_fd, buf, sizeof(buf), 0, (struct sockaddr *)&(addr.udp.addr), &len);
+        if (ret == -1) {
+            return VACC_HOST_RET_READMSG_FAILD;
+        }
+
+        if (vacc_host->cb_recv_ex) {
+            vacc_host->cb_recv_ex(vacc_host, vacc_host->opaque, buf, ret, &addr);
+        } else {
+            vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, ret);
+        }
+
+        return VACC_HOST_RET_OK;
+    }
 }
 
 int vacc_host_create(vacc_host_t *vacc_host, const vacc_host_create_param_t *param)

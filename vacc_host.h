@@ -76,6 +76,7 @@ typedef int (*vacc_host_cb_recv)(struct _vacc_host *vacc_host, void *opaque, voi
 typedef int (*vacc_host_cb_recv_ex)(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len, vacc_host_addr_u *peer_addr);
 
 typedef struct {
+    int             enable;
     int             head_len;
     int             pkg_max_len;
     int             (*get_payload_len)(void *header);

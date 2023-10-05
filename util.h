@@ -76,18 +76,54 @@ int fgfw_printf(const char *fmt, ...);
 void fgfw_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output);
 void fgfw_aes_decrypt(const unsigned char *key, const unsigned char *input, unsigned char *output);
 
+/*
+ * ret: 1 --> overlap
+ */
+static inline int fgfw_isrange_overlap(__uint128_t begin1, __uint128_t size1, __uint128_t begin2, __uint128_t size2)
+{
+    __uint128_t begin = begin1 < begin2 ? begin1 : begin2;
+    __uint128_t end1, end2, end;
+    end1 = begin1 + size1;
+    end2 = begin2 + size2;
+    end = end1 > end2 ? end1 : end2;
+    if ((end - begin) < (size1 + size2)) {
+        return 1;
+    }
+    return 0;
+}
+
+static inline char fgfw_n2c(uint32_t v)
+{
+    return (v > 9) ? ('A' + v - 10) : ('0' + v);
+}
+
+static inline int fgfw_c2n(char c)
+{
+    if ((c >= '0') && (c <= '9')) {
+        return c - '0';
+    } else if ((c >= 'A') && (c <= 'F')) {
+        return c - 'A' + 10;
+    } else if ((c >= 'a') && (c <= 'f')) {
+        return c - 'a' + 10;
+    } else {
+        return -1;
+    }
+}
+
+void fgfw_hexdump(const void *buf, uint32_t len);
+
 typedef struct {
     int     free, max;
 } single_token_bucket_t;
 
-static int __attribute__((unused)) single_token_bucket_init(single_token_bucket_t *stb, int free, int max)
+static inline int single_token_bucket_init(single_token_bucket_t *stb, int free, int max)
 {
     stb->free = free;
     stb->max = max;
     return 0;
 }
 
-static int __attribute__((unused)) single_token_bucket_insert(single_token_bucket_t *stb, int n_token)
+static inline int single_token_bucket_insert(single_token_bucket_t *stb, int n_token)
 {
     stb->free += n_token;
     if (stb->free > stb->max) {
@@ -97,7 +133,7 @@ static int __attribute__((unused)) single_token_bucket_insert(single_token_bucke
     return 0;
 }
 /* return: number of token consumed */
-static int __attribute__((unused)) single_token_bucket_consume(single_token_bucket_t *stb, int n_token)
+static inline int single_token_bucket_consume(single_token_bucket_t *stb, int n_token)
 {
     if (n_token > stb->free) {
         n_token = stb->free;
@@ -106,5 +142,30 @@ static int __attribute__((unused)) single_token_bucket_consume(single_token_buck
     stb->free -= n_token;
     return n_token;
 }
+
+typedef struct {
+    fgfw_listhead_t         node;
+    uint64_t                base;
+    uint64_t                size;
+} fgfw_range_res_node_t;
+
+typedef struct {
+    fgfw_listhead_t        freelist;            /* free node list */
+    uint64_t                base;
+    uint64_t                size;
+    uint64_t                free;
+    uint32_t                n_node;
+
+    uint32_t                putget_cnt;
+} fgfw_range_res_t;
+
+#define FGFW_RANGE_RES_INVALID          (-1ULL)
+int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size);
+int fgfw_range_res_uninit(fgfw_range_res_t *mngr);
+uint64_t fgfw_range_res_alloc(fgfw_range_res_t *mngr, uint64_t size);
+int fgfw_range_res_alloc_specified(fgfw_range_res_t *mngr, uint64_t base, uint64_t *size);
+void fgfw_range_res_free(fgfw_range_res_t *mngr, uint64_t base, uint64_t size);
+void fgfw_range_res_dump(fgfw_range_res_t *mngr);
+int fgfw_range_res_merge(fgfw_range_res_t *mngr, uint64_t base[2], uint64_t num[2], uint32_t dir);
 
 #endif
