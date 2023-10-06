@@ -11,6 +11,7 @@ enum {
     ARGPARAM_PORT_LIST,
     ARGPARAM_LOCAL_AGENT_PORT_LIST,
     ARGPARAM_TUNNEL_DEFAULT_KEY,
+    ARGPARAM_TESTBENCH,
 };
 
 struct option long_options[]={
@@ -21,6 +22,7 @@ struct option long_options[]={
     {"port_list", 1, NULL, ARGPARAM_PORT_LIST},
     {"local_agent_port_list", 1, NULL, ARGPARAM_LOCAL_AGENT_PORT_LIST},
     {"tunnel_default_key", 1, NULL, ARGPARAM_TUNNEL_DEFAULT_KEY},
+    {"testbench", 1, NULL, ARGPARAM_TESTBENCH},
 };
 
 static void tunnel_usage(char* progname)
@@ -33,6 +35,7 @@ static void tunnel_usage(char* progname)
     printf("     --port_list                    tcp port list\n");
     printf("     --local_agent_port_list        local agent port list\n");
     printf("     --tunnel_default_key           tunnel default aes key\n");
+    printf("     --testbench=[port]             testbench, set tcp port\n");
 }
 
 static void termsig_handler(int signal, siginfo_t *info, void *c)
@@ -116,11 +119,11 @@ static void set_default_aes_key(running_ctx_t *ctx) {
     strncpy((char *)ctx->default_key, "abcd01234567ef", sizeof(ctx->default_key));
 }
 
+extern int do_testbench(int mode, int port);
+
 int main(int argc, char *argv[])
 {
-    int cmdtype, longp_idx, i;
-
-    setup_signal_handling();
+    int cmdtype, longp_idx, i, testbench = 0;
 
     set_default_aes_key(&g_ctx);
 
@@ -191,6 +194,12 @@ int main(int argc, char *argv[])
             }
             break;
         }
+        case ARGPARAM_TESTBENCH:
+        {
+            testbench = strtoull(optarg, NULL, 0);
+
+            break;
+        }
         default:
             break;
         }
@@ -222,7 +231,14 @@ int main(int argc, char *argv[])
     FGFW_BUILD_BUG_ON(FGFW_TRANSPORT_MAX_SEND_LEN >= (FGFW_TRANSPORT_RECVBUF_SIZE / 16));
     FGFW_BUILD_BUG_ON((FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE % FGFW_TRANSPORT_RECVBUF_SIZE) != 0);
 #endif
+
     srand(time(0));
+
+    if (testbench) {
+        return do_testbench(g_ctx.mode, testbench);
+    }
+
+    setup_signal_handling();
 
     switch (g_ctx.mode) {
     case FGFW_WORKMODE_SERVER:

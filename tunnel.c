@@ -975,7 +975,7 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         if (tunnel->mode != FGFW_WORKMODE_CLIENT) {
             fgfw_err("tunnel in server mode, transport %d.\n", transport->transport_id);
         } else {
-            fgfw_assert((session_new_resp->orig_session_id >= 0) && (session_new_resp->orig_session_id < FGFW_TUNNEL_SESSION_MAX));
+            fgfw_assert(session_new_resp->orig_session_id < FGFW_TUNNEL_SESSION_MAX);
             orig_session = &(tunnel->_session_res[session_new_resp->orig_session_id]);
             fgfw_assert(orig_session->session_state == FGFW_TUNNEL_SESSION_STATE_CREATING);
 
