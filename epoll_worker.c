@@ -72,6 +72,64 @@ int fgfw_epoll_thread_destroy(fgfw_epoll_thread_t *epoll_thread)
     return FGFW_RETVALUE_OK;
 }
 
+static int fgfw_epoll_thread_reg_inst_ex(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst, int is_edge_trigger)
+{
+    struct epoll_event event;
+    int ret;
+
+    event.data.ptr = epoll_inst;
+    event.events = EPOLLIN | (is_edge_trigger ? EPOLLET : 0);
+    ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_ADD, epoll_inst->fd, &event);
+    if (ret) {
+        fgfw_err("epoll_ctl add faild %d\n", ret);
+        return FGFW_RETVALUE_ERR;
+    }
+
+    epoll_inst->epoll_thread = epoll_thread;
+    epoll_inst->reg_events = event.events;
+
+    fgfw_listadd_tail(&(epoll_inst->node), &(epoll_thread->inst_list_head));
+    epoll_thread->n_inst++;
+    return FGFW_RETVALUE_OK;
+}
+
+int fgfw_epoll_thread_reg_inst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst)
+{
+    return fgfw_epoll_thread_reg_inst_ex(epoll_thread, epoll_inst, 0);
+}
+
+int fgfw_epoll_thread_reg_uninst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst)
+{
+    fgfw_epoll_inst_t *p;
+    struct epoll_event event;
+    int ret, finded = 0;
+
+    if (epoll_inst->epoll_thread != epoll_thread) {
+        return FGFW_RETVALUE_INVALID_PARAM;
+    }
+
+    FGFW_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
+        if (p == epoll_inst) {
+            break;
+        }
+    }
+    if (finded == 0) {
+        return FGFW_RETVALUE_ERR;
+    }
+
+    event.data.ptr = epoll_inst;
+    event.events = epoll_inst->reg_events;
+    ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_DEL, epoll_inst->fd, &event);
+    if (ret) {
+        fgfw_err("epoll_ctl del faild %d\n", ret);
+    }
+
+    fgfw_listdel(&(epoll_inst->node));
+    epoll_thread->n_inst--;
+
+    return FGFW_RETVALUE_OK;
+}
+
 static void fgfw_timerfw_public_cb(fgfw_epoll_inst_t *epoll_inst)
 {
     fgfw_timerfw_timer_t *timer_inst = FGFW_GETCONTAINER(epoll_inst, fgfw_timerfw_timer_t, epoll_inst);
@@ -132,7 +190,7 @@ int fgfw_timerfw_add_timer(fgfw_epoll_thread_t *ctx, uint64_t first_us, uint64_t
     timer_inst->epoll_inst.fd = timer_inst->timer_fd;
     timer_inst->epoll_inst.epoll_inst_cb = fgfw_timerfw_public_cb;
 
-    fgfw_epoll_thread_reg_inst(ctx, &(timer_inst->epoll_inst));
+    fgfw_epoll_thread_reg_inst_ex(ctx, &(timer_inst->epoll_inst), 1);
 
     timer_inst->valid = 1;
 
@@ -158,59 +216,6 @@ int fgfw_timerfw_del_timer(fgfw_epoll_thread_t *ctx, int idx)
     close(timer_inst->timer_fd);
     timer_inst->valid = 0;
     memset(timer_inst, 0, sizeof(fgfw_timerfw_timer_t));
-
-    return FGFW_RETVALUE_OK;
-}
-
-int fgfw_epoll_thread_reg_inst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst)
-{
-    struct epoll_event event;
-    int ret;
-
-    event.data.ptr = epoll_inst;
-    event.events = EPOLLIN | EPOLLET;
-    ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_ADD, epoll_inst->fd, &event);
-    if (ret) {
-        fgfw_err("epoll_ctl add faild %d\n", ret);
-        return FGFW_RETVALUE_ERR;
-    }
-
-    epoll_inst->epoll_thread = epoll_thread;
-    epoll_inst->reg_events = event.events;
-
-    fgfw_listadd_tail(&(epoll_inst->node), &(epoll_thread->inst_list_head));
-    epoll_thread->n_inst++;
-    return FGFW_RETVALUE_OK;
-}
-
-int fgfw_epoll_thread_reg_uninst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst)
-{
-    fgfw_epoll_inst_t *p;
-    struct epoll_event event;
-    int ret, finded = 0;
-
-    if (epoll_inst->epoll_thread != epoll_thread) {
-        return FGFW_RETVALUE_INVALID_PARAM;
-    }
-
-    FGFW_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
-        if (p == epoll_inst) {
-            break;
-        }
-    }
-    if (finded == 0) {
-        return FGFW_RETVALUE_ERR;
-    }
-
-    event.data.ptr = epoll_inst;
-    event.events = epoll_inst->reg_events;
-    ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_DEL, epoll_inst->fd, &event);
-    if (ret) {
-        fgfw_err("epoll_ctl del faild %d\n", ret);
-    }
-
-    fgfw_listdel(&(epoll_inst->node));
-    epoll_thread->n_inst--;
 
     return FGFW_RETVALUE_OK;
 }

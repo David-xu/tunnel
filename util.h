@@ -160,7 +160,7 @@ typedef struct {
 } fgfw_range_res_t;
 
 #define FGFW_RANGE_RES_INVALID          (-1ULL)
-int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size);
+int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size, int empty);
 int fgfw_range_res_uninit(fgfw_range_res_t *mngr);
 uint64_t fgfw_range_res_alloc(fgfw_range_res_t *mngr, uint64_t size);
 int fgfw_range_res_alloc_specified(fgfw_range_res_t *mngr, uint64_t base, uint64_t *size);

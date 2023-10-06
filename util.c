@@ -192,7 +192,7 @@ static void fgfw_range_res_put_node(fgfw_range_res_t *mngr, fgfw_range_res_node_
     free(node);
 }
 
-int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size)
+int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size, int empty)
 {
     fgfw_initlisthead(&(mngr->freelist));
     mngr->base = base;
@@ -202,7 +202,7 @@ int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size)
     mngr->putget_cnt = 0;
 
     /*  */
-    if (size) {
+    if (empty == 0) {
         fgfw_range_res_node_t *p;
 
         p = fgfw_range_res_get_node(mngr);
@@ -376,6 +376,7 @@ void  fgfw_range_res_free(fgfw_range_res_t *mngr, uint64_t base, uint64_t size)
     if ((base < mngr->base) || ((base + size) > (mngr->base + mngr->size))) {
         fgfw_err("[0x%lx, 0x%lx) outof mngr range [0x%lx, 0x%lx)\n",
             base, size, mngr->base, mngr->base + mngr->size);
+        fgfw_assert(0);
         return;
     }
 

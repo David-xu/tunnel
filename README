@@ -2,6 +2,7 @@
 --mode=[client/server]
 --serv_ip=1.1.1.1
 --port_list=49000,49001,49002
+--transport_send_bps=10000           # 传输层限速值, 单位Bps(Byte per second) 不配置时默认为1000Bps
 
 server模式:
 
@@ -21,9 +22,9 @@ a)协商密钥
 
 
 # client模式
-./fgfw --mode=client --serv_ip=127.0.0.1 --port_list=40000,40001 --local_agent_port_list=30000
+./fgfw --mode=client --serv_ip=127.0.0.1 --port_list=40000,40001 --transport_send_bps=10000 --local_agent_port_list=30000
 # server模式
-./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001
+./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001 --transport_send_bps=10000
 
 # 测试
 ./fgfw --testbench=30000 --mode=server

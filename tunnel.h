@@ -7,9 +7,6 @@
 
 #define FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE              (2 * 1024 * 1024)
 
-typedef int fgfw_tunnel_bundle_id;
-#define FGFW_BUNDLE_ID_INVALID              ((fgfw_tunnel_bundle_id)(-1))
-
 typedef struct _fgfw_tunnel_bundle {
     fgfw_tunnel_bundle_id                   bundle_id;
 
@@ -23,8 +20,6 @@ typedef struct _fgfw_tunnel_bundle {
     fgfw_transport_id                       transport_list[FGFW_TUNNEL_MAX_TRANSPORT_PER_BUNDLE];
 } fgfw_tunnel_bundle_t;
 
-typedef int fgfw_tunnel_session_id;
-
 typedef enum {
     FGFW_TUNNEL_SESSION_STATE_FREE = 0,
     FGFW_TUNNEL_SESSION_STATE_INIT,
@@ -36,6 +31,7 @@ typedef enum {
 
 typedef struct _fgfw_tunnel_session {
     struct _fgfw_tunnel                     *tunnel;
+    fgfw_local_agent_conn_id                agent_conn_id;
     fgfw_tunnel_bundle_id                   bundle_id;
 
     fgfw_tunnel_session_id                  id;             /* [0, (FGFW_TUNNEL_SESSION_MAX - 1)] */
@@ -86,7 +82,7 @@ typedef struct _fgfw_tunnel {
     /* return session id
      * or some err: FGFW_RETVALUE_NOENOUGHRES (no free resource)
      */
-    fgfw_tunnel_session_id (*session_open)(struct _fgfw_tunnel *tunnel, fgfw_tunnel_bundle_id bundle_id, uint32_t port, uint32_t new_session_key);
+    fgfw_tunnel_session_id (*session_open)(struct _fgfw_tunnel *tunnel, fgfw_local_agent_conn_id agent_conn_id, fgfw_tunnel_bundle_id bundle_id, uint32_t port, uint32_t new_session_key);
     /*
      *
      */
@@ -100,6 +96,8 @@ typedef struct _fgfw_tunnel {
 
     /* ugly */
     struct _fgfw_local_agent    *local_agent;
+
+    uint32_t                    transport_send_bps;
 } fgfw_tunnel_t;
 
 fgfw_tunnel_bundle_id fgfw_tunnel_bundle_find(fgfw_tunnel_t *tunnel, char *ipstr_at_cli, char *ipstr_at_srv, uint32_t pid_at_cli);
@@ -109,8 +107,9 @@ int fgfw_tunnel_bundle_find_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_
 int fgfw_tunnel_bundle_insert_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id, fgfw_transport_id transport_id);
 int fgfw_tunnel_bundle_remove_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id, fgfw_transport_id transport_id);
 fgfw_transport_id fgfw_tunnel_bundle_get_transport_id(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id);
+fgfw_tunnel_bundle_id fgfw_tunnel_find_bundle_by_transport(fgfw_tunnel_t *tunnel, fgfw_transport_id transport_id);
 
-int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, char *serv_ip, int n_port, int port_list[], uint8_t default_key[]);
+int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, uint32_t transport_send_bps, char *serv_ip, int n_port, int port_list[], uint8_t default_key[]);
 int fgfw_tunnel_destroy(fgfw_tunnel_t *tunnel);
 int fgfw_tunnel_connect_to_serv(fgfw_tunnel_t *tunnel, char *serv_ip, int n_port, int port_list[]);
 

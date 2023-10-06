@@ -3,7 +3,6 @@
 
 #define FGFW_LOCAL_AGENT_MAX_CONN           256
 
-typedef int fgfw_local_agent_conn_id;
 struct _fgfw_local_agent;
 typedef struct {
     fgfw_local_agent_conn_id    conn_id;
@@ -12,6 +11,8 @@ typedef struct {
     vacc_host_t                 vacc_host;
     fgfw_listhead_t             node;           /* link to active local conn list */
     fgfw_epoll_inst_t           epoll_inst;     /*  */
+
+    uint32_t                    listen_port;
 } fgfw_local_agent_conn_t;
 
 /* this is used for connect to local */
@@ -33,13 +34,16 @@ typedef struct _fgfw_local_agent {
     fgfw_listhead_t         listen_local_conn;
 
     /*
-     *
+     * return new agent_conn id
      */
-    int (*local_conn_open)(struct _fgfw_local_agent *local_agent, fgfw_tunnel_session_id session_id, uint32_t port);
+    fgfw_local_agent_conn_id (*local_conn_open)(struct _fgfw_local_agent *local_agent, fgfw_tunnel_session_id session_id, uint32_t port);
     /*
      *
      */
     int (*local_conn_close)(struct _fgfw_local_agent *local_agent, fgfw_local_agent_conn_id id);
+    /*
+     */
+    int (*local_conn_send)(struct _fgfw_local_agent *local_agent, fgfw_local_agent_conn_id agent_conn_id, void *buf, int len);
 } fgfw_local_agent_t;
 
 int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[]);

@@ -14,7 +14,7 @@ static int local_agent_vacc_host_recv(struct _vacc_host *vacc_host, void *opaque
     fgfw_assert(local_agent == inst->local_agent);
 
     fgfw_log("len %d\n", len);
-    fgfw_hexdump(buf, len);
+    // fgfw_hexdump(buf, len);
 
     if ((inst->session_id < 0) || (inst->session_id >= FGFW_TUNNEL_SESSION_MAX)) {
         fgfw_err("inst idx %d, invalid session id.\n", inst->session_id);
@@ -28,7 +28,11 @@ static int local_agent_vacc_host_recv(struct _vacc_host *vacc_host, void *opaque
 static vacc_host_t* local_agent_vacc_host_get(struct _vacc_host *vacc_host, void *opaque)
 {
     fgfw_local_agent_t *local_agent = (fgfw_local_agent_t *)opaque;
-    fgfw_local_agent_conn_t *inst;
+    fgfw_local_agent_conn_t *inst, *listen_inst = NULL;
+
+    if (vacc_host) {
+        listen_inst = FGFW_GETCONTAINER(vacc_host, fgfw_local_agent_conn_t, vacc_host);
+    }
 
     if (local_agent->free_local_conn_tail == local_agent->free_local_conn_head) {
         fgfw_err("no enough inst\n");
@@ -38,6 +42,10 @@ static vacc_host_t* local_agent_vacc_host_get(struct _vacc_host *vacc_host, void
     /* alloc new inst */
     inst = local_agent->free_local_conn[local_agent->free_local_conn_head % FGFW_LOCAL_AGENT_MAX_CONN];
     local_agent->free_local_conn_head++;
+
+    if (listen_inst) {
+        inst->listen_port = listen_inst->listen_port;
+    }
 
     return &(inst->vacc_host);
 }
@@ -61,7 +69,6 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
 {
     fgfw_local_agent_t *local_agent = (fgfw_local_agent_t *)opaque;
     fgfw_local_agent_conn_t *inst = FGFW_GETCONTAINER(vacc_host, fgfw_local_agent_conn_t, vacc_host);
-    unsigned short port;
 
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
@@ -84,6 +91,7 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
         if (vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP) {
             struct in_addr in = vacc_host->u.tcp.cli_addr.sin_addr;
             char ipstr[INET_ADDRSTRLEN];
+            unsigned short port;
             port = ntohs(vacc_host->u.tcp.cli_addr.sin_port);
             inet_ntop(AF_INET, &in, ipstr, sizeof(ipstr));
             fgfw_log("\t\tclient: %s(%d)\n", ipstr, port);
@@ -94,7 +102,7 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
         if (local_agent->mode == FGFW_WORKMODE_CLIENT) {
             fgfw_assert(local_agent->tunnel->n_bundle == 1);
             /* new connection, create new tunnel session, client */
-            inst->session_id = local_agent->tunnel->session_open(local_agent->tunnel, 0, port, -1);
+            inst->session_id = local_agent->tunnel->session_open(local_agent->tunnel, inst->conn_id, 0, inst->listen_port, -1);
             if (inst->session_id < 0) {
                 fgfw_err("inst conn_id %d session create faild, ret %d\n", inst->conn_id, inst->session_id);
             } else {
@@ -198,7 +206,7 @@ static fgfw_local_agent_conn_id local_agent_conn_open(fgfw_local_agent_t *local_
 
     vacc_host = local_agent_vacc_host_get(NULL, local_agent);
     if (vacc_host == NULL) {
-        return FGFW_RETVALUE_NOENOUGHRES;
+        return FGFW_AGENT_CONN_ID_INVALID;
     }
 
     inst = FGFW_GETCONTAINER(vacc_host, fgfw_local_agent_conn_t, vacc_host);
@@ -244,6 +252,23 @@ static int local_agent_conn_close(fgfw_local_agent_t *local_agent, fgfw_local_ag
     return FGFW_RETVALUE_OK;
 }
 
+static int local_agent_conn_send(fgfw_local_agent_t *local_agent, fgfw_local_agent_conn_id id, void *buf, int len)
+{
+    fgfw_local_agent_conn_t *inst = &(local_agent->local_conn_pool[id]);
+    int ret;
+
+    fgfw_assert((id >= 0) && (id < FGFW_LOCAL_AGENT_MAX_CONN));
+
+    ret = vacc_host_write(&(inst->vacc_host), buf, len);
+    if (ret) {
+        fgfw_err("agent conn id %d: vacc_host_write() return %d\n", inst->conn_id, ret);
+    } else {
+        fgfw_dbg(FGFW_DBGFLAG_AGENT_CONN, "agent conn id %d, send %d.\n", inst->conn_id, len);
+    }
+
+    return FGFW_RETVALUE_OK;
+}
+
 int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[])
 {
     int ret, i;
@@ -256,6 +281,7 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunn
 
     local_agent->local_conn_open = local_agent_conn_open;
     local_agent->local_conn_close = local_agent_conn_close;
+    local_agent->local_conn_send = local_agent_conn_send;
 
     local_agent->n_active_local_conn = 0;
     fgfw_initlisthead(&(local_agent->active_local_conn));
@@ -308,6 +334,9 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunn
         inst = FGFW_GETCONTAINER(vacc_host, fgfw_local_agent_conn_t, vacc_host);
         fgfw_listadd_tail(&(inst->node), &(local_agent->listen_local_conn));
         local_agent->n_listen_local_conn++;
+
+        /* save listen port */
+        inst->listen_port = local_agent_port_list[i];
     }
 
     return FGFW_RETVALUE_OK;

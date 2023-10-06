@@ -7,14 +7,13 @@
 #define FGFW_PENDING_BUFSIZE                (1 * 1024 * 1024)
 #define FGFW_TRANSPORT_RECVBUF_SIZE         (1 * 1024 * 1024)
 #define FGFW_TRANSPORT_MAX_SEND_LEN         (1024)
-#define FGFW_TRANSPORT_DEFAULT_SEND_BPS     (1000)
-
-typedef int fgfw_transport_id;
-#define FGFW_TRANSPORT_ID_INVALID           ((fgfw_transport_id)(-1))
+#define FGFW_TRANSPORT_DEFAULT_SEND_BPS     (10000)
 
 typedef struct _fgfw_transport {
     fgfw_transport_id           transport_id;
-    int                         bundle_id;      /* which bundle this transport belongs to, FGFW_BUNDLE_ID_INVALID if not belongs to any bundle */
+    int                         transport_belongs_to_bundle_id; /* which bundle this transport belongs to, FGFW_BUNDLE_ID_INVALID if not belongs to any bundle */
+
+    pthread_mutex_t             transport_op_big_lock;
 
     fgfw_epoll_inst_t           epoll_inst;     /*  */
 

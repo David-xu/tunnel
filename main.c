@@ -4,6 +4,8 @@ char * const short_options="hv";
 
 static running_ctx_t g_ctx = {0};
 
+uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
+
 enum {
     ARGPARAM_BEGIN = 256,
     ARGPARAM_MODE,
@@ -12,6 +14,7 @@ enum {
     ARGPARAM_LOCAL_AGENT_PORT_LIST,
     ARGPARAM_TUNNEL_DEFAULT_KEY,
     ARGPARAM_TESTBENCH,
+    ARGPARAM_TRANSPORT_SEND_BPS,
 };
 
 struct option long_options[]={
@@ -23,6 +26,7 @@ struct option long_options[]={
     {"local_agent_port_list", 1, NULL, ARGPARAM_LOCAL_AGENT_PORT_LIST},
     {"tunnel_default_key", 1, NULL, ARGPARAM_TUNNEL_DEFAULT_KEY},
     {"testbench", 1, NULL, ARGPARAM_TESTBENCH},
+    {"transport_send_bps", 1, NULL, ARGPARAM_TRANSPORT_SEND_BPS}
 };
 
 static void tunnel_usage(char* progname)
@@ -36,6 +40,7 @@ static void tunnel_usage(char* progname)
     printf("     --local_agent_port_list        local agent port list\n");
     printf("     --tunnel_default_key           tunnel default aes key\n");
     printf("     --testbench=[port]             testbench, set tcp port\n");
+    printf("     --transport_send_bps           send bps(bytes per second)\n");
 }
 
 static void termsig_handler(int signal, siginfo_t *info, void *c)
@@ -72,7 +77,7 @@ int do_server(running_ctx_t *ctx)
 {
     int ret;
     /* create tunnel */
-    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
+    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
 
     /* create local agent */
     ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
@@ -90,7 +95,7 @@ int do_client(running_ctx_t *ctx)
     int ret;
 
     /* create tunnel */
-    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
+    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
 
     /* create local agent */
     ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
@@ -200,6 +205,11 @@ int main(int argc, char *argv[])
 
             break;
         }
+        case ARGPARAM_TRANSPORT_SEND_BPS:
+        {
+            g_ctx.transport_send_bps = strtoull(optarg, NULL, 0);
+            break;
+        }
         default:
             break;
         }
@@ -215,6 +225,10 @@ int main(int argc, char *argv[])
     }
     fgfw_log("default aes key:\n");
     fgfw_hexdump(g_ctx.default_key, sizeof(g_ctx.default_key));
+    if (g_ctx.transport_send_bps == 0) {
+        g_ctx.transport_send_bps = FGFW_TRANSPORT_DEFAULT_SEND_BPS;
+    }
+    fgfw_log("transport_send_bps: %d\n", g_ctx.transport_send_bps);
 #if 0
     unsigned char key[16] = "0123456789abcdef";
     unsigned char plaintext[16] = "hello, world!";

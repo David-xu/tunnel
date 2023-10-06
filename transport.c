@@ -34,10 +34,12 @@ static int fgfw_transport_pending_enq(fgfw_transport_t *transport, void *buf, in
     fgfw_assert((len & (FGFW_TRANSPORT_PKT_ALIGN - 1)) == 0);
 
     if (len > left) {
-        fgfw_assert(0);
+        fgfw_warn("transport %d, buff afull, len %d\n", transport->transport_id, len);
         /* no enough pending buf left */
         return FGFW_RETVALUE_NOENOUGHRES;
     }
+
+    pthread_mutex_lock(&(transport->transport_op_big_lock));
 
     /* insert into pending buf */
     left = FGFW_PENDING_BUFSIZE - (transport->pending_buf_tail % FGFW_PENDING_BUFSIZE);
@@ -79,6 +81,8 @@ static int fgfw_transport_pending_enq(fgfw_transport_t *transport, void *buf, in
     /* enq */
     transport->pending_buf_tail += len;
 
+    pthread_mutex_unlock(&(transport->transport_op_big_lock));
+
     return FGFW_RETVALUE_OK;
 }
 
@@ -113,6 +117,8 @@ static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
     if (n_pending == 0) {
         return;
     }
+
+    pthread_mutex_lock(&(transport->transport_op_big_lock));
     
     /* get the number allow to send */
     n_allow_send = single_token_bucket_consume(&(transport->send_stb), n_pending);
@@ -124,6 +130,8 @@ static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
             fgfw_err("%s: vacc_host_write() return %d\n", transport->conn_desc, ret);
         }
     }
+
+    pthread_mutex_unlock(&(transport->transport_op_big_lock));
 }
 
 int fgfw_transport_fill_token(fgfw_transport_t *transport, int n_token)
@@ -157,7 +165,11 @@ int fgfw_transport_send(fgfw_transport_t *transport, void *buf, int len)
 
     /* to make it simple, always insert all into pending buf fist */
     int ret = fgfw_transport_pending_enq(transport, buf, len);
+    if (ret) {
+        /* need return this err */
+    }
 
+    /* always do real send */
     fgfw_transport_send_pending_try(transport);
 
     return ret;

@@ -144,6 +144,8 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
 
 static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
 {
+    fgfw_log("recv len %d, echo send\n", len);
+
     /* just echo */
     return vacc_host_write(vacc_host, buf, len);
 }
