@@ -80,6 +80,7 @@ extern uint64_t g_dbgprint_flag;
 #define FGFW_RETVALUE_SESSION_CREATE_FAILD  -13
 #define FGFW_RETVALUE_CHALLENGE_NOT_MATCH   -14
 #define FGFW_RETVALUE_BUNDLE_NOT_BUILD      -15
+#define FGFW_RETVALUE_NOPKT_NEED_PROC       -16
 
 #define FGFW_WORKMODE_SERVER                1
 #define FGFW_WORKMODE_CLIENT                2

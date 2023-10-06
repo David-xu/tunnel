@@ -28,13 +28,15 @@ static void fgfw_tunnel_session_ring_buf_drain(fgfw_tunnel_t *tunnel, fgfw_tunne
     }
     second = pending_len - first;
 
+    fgfw_dbg(FGFW_DBGFLAG_SESSION, "head 0x%lx, tail 0x%lx, offset 0x%lx\n", session->recv_ring_head, session->recv_ring_tail, offset);
+
     /* do send */
     tunnel->local_agent->local_conn_send(tunnel->local_agent, session->agent_conn_id, session->recv_ring_buf + offset, first);
     if (second) {
         tunnel->local_agent->local_conn_send(tunnel->local_agent, session->agent_conn_id, session->recv_ring_buf, second);
     }
 
-    session->recv_ring_head += (first + second);
+    session->recv_ring_head += pending_len;
 }
 
 static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fgfw_local_agent_conn_id agent_conn_id, fgfw_tunnel_bundle_id bundle_id, uint32_t port, uint32_t new_session_key)
@@ -626,7 +628,7 @@ static int tunnel_transport_recv(struct _vacc_host *vacc_host, void *opaque, voi
     }
     /*  */
 
-    tunnel_transport_proc_one_pkt(tunnel, transport);
+    while (tunnel_transport_proc_one_pkt(tunnel, transport) == FGFW_RETVALUE_OK);
 
     return 0;
 }
@@ -917,7 +919,7 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
     uint32_t avail_len = transport->recv_buf_tail - transport->recv_buf_head;
 
     if (avail_len == 0) {
-        return FGFW_RETVALUE_OK;
+        return FGFW_RETVALUE_NOPKT_NEED_PROC;
     }
 
     fgfw_assert((transport->recv_buf_tail & (FGFW_TUNNEL_PROTOCOL_PKTLEN_ALIGN - 1)) == 0);

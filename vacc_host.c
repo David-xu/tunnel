@@ -315,6 +315,8 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
     struct iovec iov;
     struct msghdr msgh;
     int ret, payload_len, left_size = vacc_host->proto_abs.pkg_max_len - vacc_host->proto_abs.head_len;
+    int recved_len = 0, need_recv_len;
+    int retry_cnt = 10000;
 
     memset(&msgh, 0, sizeof(msgh));
     iov.iov_base = (void *)buf;
@@ -335,19 +337,26 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
         }
     }
 
+    // printf("!!!!!!!!!!!!!! ret %d\n", ret);
+
     if (msgh.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
+        printf("!!!!!!!!!!!!!! msgh.msg_flags 0x%x\n", msgh.msg_flags);
+        while (1) usleep(100000);
         return VACC_HOST_RET_TRUNCATED;
     }
 
     /* get payload len */
     payload_len = vacc_host->proto_abs.get_payload_len(buf);
+    need_recv_len = payload_len;
 
     if (payload_len) {
         if (payload_len > left_size) {
+            printf("!!!!!!!!!!!!!! payload_len %d left_size %d\n", payload_len, left_size);
+            while (1) usleep(100000);
             return VACC_HOST_RET_INVALID_MSGLEN;
         }
 retry:
-        ret = read(vacc_host->sock_fd, buf + vacc_host->proto_abs.head_len, payload_len);
+        ret = read(vacc_host->sock_fd, buf + vacc_host->proto_abs.head_len + recved_len, need_recv_len);
         if (ret < 0) {
             if ((errno == EINTR) || (errno == EAGAIN)) {
                 usleep(100);
@@ -358,10 +367,20 @@ retry:
             }
         }
         if (ret <= 0) {
+            printf("!!!!!!!!!!!!!! ret %d \n", ret);
+            while (1) usleep(100000);
             return VACC_HOST_RET_READMSG_FAILD;
         }
-        if (ret != (int)payload_len) {
-            return VACC_HOST_RET_RECV_LEN_NOTEQ;
+        recved_len += ret;
+        need_recv_len -= ret;
+        if (recved_len != (int)payload_len) {
+            retry_cnt--;
+            if (retry_cnt) {
+                goto retry;
+            } else {
+                printf("!!!!!!!!!!!!!! try too many times, recved_len %d payload_len %d\n", recved_len, payload_len);
+                while (1) usleep(100000);
+            }
         }
     }
 

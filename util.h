@@ -71,6 +71,8 @@ static inline void fgfw_listdel(fgfw_listhead_t *p)
 int qemu_time_millis_now_raw(unsigned long *now);
 int time_string_now_raw(char *buf);
 
+uint32_t fgfw_crc32c_sw(const void *data, uint64_t length);
+
 int fgfw_printf(const char *fmt, ...);
 
 void fgfw_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output);

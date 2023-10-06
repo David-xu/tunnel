@@ -10,6 +10,18 @@ typedef struct {
 } testbench_inst_t;
 
 typedef struct {
+    uint32_t            magic;              /* TESTBENCH_PKT_MAGIC */
+    uint16_t            type;
+    uint16_t            cnt;
+    uint32_t            payload_len;
+    uint32_t            crc;
+} testbench_pkt_head_t;
+
+#define TESTBENCH_PKT_MAGIC             0x1357acbd
+
+#define TESTBENCH_PKT_MAXLEN            (16 * 1024)
+
+typedef struct {
     testbench_inst_t            inst_pool[TESTBENCH_MAX_INST];
     fgfw_epoll_thread_t         epoll_thread;
 } testbench_ctx_t;
@@ -150,10 +162,28 @@ static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void 
     return vacc_host_write(vacc_host, buf, len);
 }
 
+uint32_t g_payload_len_log[1024 * 1024];
+
 static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
 {
-    fgfw_log("len %d\n", len);
+    static uint32_t total_len = 0;
+    static uint16_t cnt = 0;
+    uint32_t crc_calc;
+    testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
+    
+    fgfw_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
+
     // fgfw_hexdump(buf, len);
+    fgfw_assert(cnt == head->cnt);
+    fgfw_assert(head->magic == TESTBENCH_PKT_MAGIC);
+    fgfw_assert(head->payload_len == g_payload_len_log[cnt]);
+    crc_calc = fgfw_crc32c_sw(head + 1, head->payload_len);
+    fgfw_assert(head->crc == crc_calc);
+
+    total_len += len;
+    fgfw_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
+
+    cnt++;
     return 0;
 }
 
@@ -195,13 +225,20 @@ static int testbench_server(int port)
     return 0;
 }
 
+static int test_proto_get_payload_len(void *buf)
+{
+    testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
+    return head->payload_len;
+}
+
 static int testbench_client(int port)
 {
     testbench_ctx_t tb_ctx;
     vacc_host_create_param_t param;
     vacc_host_t *cli;
-    int ret, len;
-    uint8_t sendbuf[1024];
+    int ret, len, i;
+    static uint16_t cnt = 0;
+    uint8_t sendbuf[TESTBENCH_PKT_MAXLEN];
 
     memset(&tb_ctx, 0, sizeof(testbench_ctx_t));
 
@@ -215,7 +252,10 @@ static int testbench_client(int port)
     param.cb_init = testbench_init;
     param.cb_uninit = testbench_uninit;
     param.cb_recv = testbench_recv_noecho;
-    param.proto_abs.enable = 0;
+    param.proto_abs.enable = 1;
+    param.proto_abs.head_len = sizeof(testbench_pkt_head_t);
+    param.proto_abs.pkg_max_len = TESTBENCH_PKT_MAXLEN;
+    param.proto_abs.get_payload_len = test_proto_get_payload_len;
     param.opaque = &tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
@@ -227,9 +267,30 @@ static int testbench_client(int port)
         return FGFW_RETVALUE_ERR;
     }
 
+    for (i = 0; i < TESTBENCH_PKT_MAXLEN; i++) {
+        sendbuf[i] = (uint8_t)rand();
+    }
+
     while (1) {
-        len = rand() % sizeof(sendbuf);
-        vacc_host_write(cli, sendbuf, len);
+        testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)sendbuf;
+        len = rand() % (sizeof(sendbuf) - 1024);
+        pkt_head->magic = TESTBENCH_PKT_MAGIC;
+        pkt_head->cnt = cnt;
+        pkt_head->payload_len = len;
+        pkt_head->crc = fgfw_crc32c_sw(pkt_head + 1, len);
+
+        g_payload_len_log[cnt] = pkt_head->payload_len;
+
+        if (vacc_host_write(cli, sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
+            fgfw_log("cnt %d, len %d\n", cnt, len);
+
+            cnt++;
+
+            usleep(100000);
+        }
+    }
+
+    while (1) {
         usleep(1000);
     }
 
