@@ -127,6 +127,7 @@ static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
         fgfw_transport_pending_deq(transport, buf, n_allow_send);
         ret = vacc_host_write(&(transport->conn), buf, n_allow_send);
         if (ret) {
+            fgfw_assert(0);
             fgfw_err("%s: vacc_host_write() return %d\n", transport->conn_desc, ret);
         }
     }
@@ -216,6 +217,8 @@ int fgfw_transport_recv(fgfw_transport_t *transport, void *buf, int len)
 
                 transport->recv_buf_tail += FGFW_TRANSPORT_PKT_ALIGN;
                 transport->align_tmp_buf_len = 0;
+
+                fgfw_assert((transport->recv_buf_tail & (FGFW_TRANSPORT_PKT_ALIGN - 1)) == 0);
             }
         } else {
             curlen = left;
@@ -261,6 +264,8 @@ int fgfw_transport_recv(fgfw_transport_t *transport, void *buf, int len)
                 }
 
                 transport->recv_buf_tail += curlen;
+
+                fgfw_assert((transport->recv_buf_tail & (FGFW_TRANSPORT_PKT_ALIGN - 1)) == 0);
             } else {
                 /* no enouth FGFW_TRANSPORT_PKT_ALIGN, just copy info transport->align_tmp_buf */
                 fgfw_assert(transport->align_tmp_buf_len == 0);

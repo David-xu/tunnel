@@ -15,6 +15,7 @@ enum {
     ARGPARAM_TUNNEL_DEFAULT_KEY,
     ARGPARAM_TESTBENCH,
     ARGPARAM_TRANSPORT_SEND_BPS,
+    ARGPARAM_PORT_AGENT_OFFSET,
 };
 
 struct option long_options[]={
@@ -26,7 +27,8 @@ struct option long_options[]={
     {"local_agent_port_list", 1, NULL, ARGPARAM_LOCAL_AGENT_PORT_LIST},
     {"tunnel_default_key", 1, NULL, ARGPARAM_TUNNEL_DEFAULT_KEY},
     {"testbench", 1, NULL, ARGPARAM_TESTBENCH},
-    {"transport_send_bps", 1, NULL, ARGPARAM_TRANSPORT_SEND_BPS}
+    {"transport_send_bps", 1, NULL, ARGPARAM_TRANSPORT_SEND_BPS},
+    {"port_agent_offset", 1, NULL, ARGPARAM_PORT_AGENT_OFFSET},
 };
 
 static void tunnel_usage(char* progname)
@@ -41,6 +43,7 @@ static void tunnel_usage(char* progname)
     printf("     --tunnel_default_key           tunnel default aes key\n");
     printf("     --testbench=[port]             testbench, set tcp port\n");
     printf("     --transport_send_bps           send bps(bytes per second)\n");
+    printf("     --port_agent_offset            server port = client port + port_agent_offset\n");
 }
 
 static void termsig_handler(int signal, siginfo_t *info, void *c)
@@ -80,7 +83,7 @@ int do_server(running_ctx_t *ctx)
     ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
 
     /* create local agent */
-    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
+    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, ctx->port_agent_offset, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
     if (ret) {
         fgfw_err("local agent create faild %d\n", ret);
         fgfw_tunnel_destroy(&(ctx->tunnel));
@@ -98,7 +101,7 @@ int do_client(running_ctx_t *ctx)
     ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
 
     /* create local agent */
-    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
+    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, ctx->port_agent_offset, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
     if (ret) {
         fgfw_err("local agent create faild %d\n", ret);
         fgfw_tunnel_destroy(&(ctx->tunnel));
@@ -210,6 +213,11 @@ int main(int argc, char *argv[])
             g_ctx.transport_send_bps = strtoull(optarg, NULL, 0);
             break;
         }
+        case ARGPARAM_PORT_AGENT_OFFSET:
+        {
+            g_ctx.port_agent_offset = strtoull(optarg, NULL, 0);
+            break;
+        }
         default:
             break;
         }
@@ -229,6 +237,8 @@ int main(int argc, char *argv[])
         g_ctx.transport_send_bps = FGFW_TRANSPORT_DEFAULT_SEND_BPS;
     }
     fgfw_log("transport_send_bps: %d\n", g_ctx.transport_send_bps);
+    fgfw_log("port_agent_offset: %d\n", g_ctx.port_agent_offset);
+    
 #if 0
     unsigned char key[16] = "0123456789abcdef";
     unsigned char plaintext[16] = "hello, world!";

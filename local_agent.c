@@ -102,7 +102,8 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
         if (local_agent->mode == FGFW_WORKMODE_CLIENT) {
             fgfw_assert(local_agent->tunnel->n_bundle == 1);
             /* new connection, create new tunnel session, client */
-            inst->session_id = local_agent->tunnel->session_open(local_agent->tunnel, inst->conn_id, 0, inst->listen_port, -1);
+            inst->session_id = local_agent->tunnel->session_open(local_agent->tunnel, inst->conn_id, 0,
+                inst->listen_port + local_agent->port_agent_offset, -1);
             if (inst->session_id < 0) {
                 fgfw_err("inst conn_id %d session create faild, ret %d\n", inst->conn_id, inst->session_id);
             } else {
@@ -269,7 +270,7 @@ static int local_agent_conn_send(fgfw_local_agent_t *local_agent, fgfw_local_age
     return FGFW_RETVALUE_OK;
 }
 
-int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[])
+int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, int port_agent_offset, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[])
 {
     int ret, i;
     vacc_host_create_param_t param;
@@ -277,6 +278,7 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunn
     memset(local_agent, 0, sizeof(fgfw_local_agent_t));
 
     local_agent->mode = mode;
+    local_agent->port_agent_offset = port_agent_offset;
     local_agent->tunnel = tunnel;
 
     local_agent->local_conn_open = local_agent_conn_open;

@@ -315,30 +315,57 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
     struct iovec iov;
     struct msghdr msgh;
     int ret, payload_len, left_size = vacc_host->proto_abs.pkg_max_len - vacc_host->proto_abs.head_len;
-    int recved_len = 0, need_recv_len;
-    int retry_cnt = 10000;
+    int need_recv_len, already_recv_len = 0;
+    int retry_cnt;
 
+    already_recv_len = 0;
+    // printf("!!!!!!!!!!!!! 00 ############## already_recv_len %d\n", already_recv_len);
+    need_recv_len = vacc_host->proto_abs.head_len;
+    retry_cnt = 10000;
+
+__retry_recv_head:
     memset(&msgh, 0, sizeof(msgh));
-    iov.iov_base = (void *)buf;
-    iov.iov_len = vacc_host->proto_abs.head_len;
+    iov.iov_base = (void *)buf + already_recv_len;
+    iov.iov_len = need_recv_len - already_recv_len;
 
     msgh.msg_iov = &iov;
     msgh.msg_iovlen = 1;
 
     ret = recvmsg(vacc_host->sock_fd, &msgh, MSG_DONTWAIT);
     if (ret == 0) {
+        // printf("**********   exit   01\n");
         return VACC_HOST_RET_PEERCLOSE;
     } else if (ret < 0) {
-        if (errno == ECONNRESET) {
+        if ((errno == EINTR) || (errno == EAGAIN)) {
+            usleep(100);
+            goto __retry_recv_head;
+        } else if (errno == ECONNRESET) {
+            // printf("**********   exit   02\n");
             /* peer close, just return 0 */
             return VACC_HOST_RET_PEERCLOSE;
         } else {
+            // printf("**********   exit   03, errno %d\n", errno);
             return VACC_HOST_RET_READMSG_FAILD;
         }
     }
-
-    // printf("!!!!!!!!!!!!!! ret %d\n", ret);
-
+    // printf("!!!!!!!!!!!!! 01 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
+    already_recv_len += ret;
+    // printf("!!!!!!!!!!!!! 02 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
+    if (already_recv_len != need_recv_len) {
+        retry_cnt--;
+        if (retry_cnt) {
+            printf("!!!!!!!!!!!!!! 12341234 123412341234 !!!!!!!!!!!!!!!! already_recv_len %d need_recv_len %d, ret %d, fd %d\n",
+                already_recv_len, need_recv_len, ret, vacc_host->sock_fd);
+            goto __retry_recv_head;
+        } else {
+            printf("!!!!!!!!!!!!!! try too many times, recved_len %d need_recv_len %d\n", already_recv_len, need_recv_len);
+            while (1) usleep(100000);
+        }
+    }
+#if 0
+    printf("!!!!!!!!!!!!!! 03 ################# ret %d ####### already_recv_len %d, fd %d\n",
+        ret, already_recv_len, vacc_host->sock_fd);
+#endif
     if (msgh.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
         printf("!!!!!!!!!!!!!! msgh.msg_flags 0x%x\n", msgh.msg_flags);
         while (1) usleep(100000);
@@ -347,6 +374,7 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
 
     /* get payload len */
     payload_len = vacc_host->proto_abs.get_payload_len(buf);
+    already_recv_len = 0;
     need_recv_len = payload_len;
 
     if (payload_len) {
@@ -355,8 +383,9 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
             while (1) usleep(100000);
             return VACC_HOST_RET_INVALID_MSGLEN;
         }
+        retry_cnt = 10000;
 retry:
-        ret = read(vacc_host->sock_fd, buf + vacc_host->proto_abs.head_len + recved_len, need_recv_len);
+        ret = read(vacc_host->sock_fd, buf + vacc_host->proto_abs.head_len + already_recv_len, need_recv_len);
         if (ret < 0) {
             if ((errno == EINTR) || (errno == EAGAIN)) {
                 usleep(100);
@@ -371,14 +400,14 @@ retry:
             while (1) usleep(100000);
             return VACC_HOST_RET_READMSG_FAILD;
         }
-        recved_len += ret;
+        already_recv_len += ret;
         need_recv_len -= ret;
-        if (recved_len != (int)payload_len) {
+        if (already_recv_len != (int)payload_len) {
             retry_cnt--;
             if (retry_cnt) {
                 goto retry;
             } else {
-                printf("!!!!!!!!!!!!!! try too many times, recved_len %d payload_len %d\n", recved_len, payload_len);
+                printf("!!!!!!!!!!!!!! try too many times, recved_len %d payload_len %d\n", already_recv_len, payload_len);
                 while (1) usleep(100000);
             }
         }

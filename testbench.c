@@ -1,7 +1,8 @@
 #include "pub.h"
 
 #define TESTBENCH_MAX_INST              8
-
+// #define TESTBENCH_ECHO_CHECK            1
+static volatile int g_stop = 0;
 typedef struct {
     int                 valid;
     int                 idx;
@@ -153,7 +154,37 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
 
     return 0;
 }
+#if TESTBENCH_ECHO_CHECK
+static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
+{
 
+    static uint32_t total_len = 0;
+    static uint16_t cnt = 0;
+    uint32_t crc_calc;
+    testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
+
+    g_stop = 1;
+    
+    fgfw_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
+
+    // fgfw_hexdump(buf, len);
+    fgfw_assert(cnt == head->cnt);
+    fgfw_assert(head->magic == TESTBENCH_PKT_MAGIC);
+
+    crc_calc = fgfw_crc32c_sw(head + 1, head->payload_len);
+    fgfw_assert(head->crc == crc_calc);
+
+    total_len += len;
+    fgfw_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
+
+    cnt++;
+
+    g_stop = 0;
+
+    return vacc_host_write(vacc_host, buf, len);
+    /* just echo */
+}
+#else
 static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
 {
     fgfw_log("recv len %d, echo send\n", len);
@@ -161,6 +192,7 @@ static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void 
     /* just echo */
     return vacc_host_write(vacc_host, buf, len);
 }
+#endif
 
 uint32_t g_payload_len_log[1024 * 1024];
 
@@ -171,6 +203,8 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
     uint32_t crc_calc;
     testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
     
+    g_stop = 1;
+
     fgfw_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
     // fgfw_hexdump(buf, len);
@@ -183,8 +217,16 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
     total_len += len;
     fgfw_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
 
+    g_stop = 0;
+
     cnt++;
     return 0;
+}
+
+static int test_proto_get_payload_len(void *buf)
+{
+    testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
+    return head->payload_len;
 }
 
 static int testbench_server(int port)
@@ -205,8 +247,16 @@ static int testbench_server(int port)
     param.cb_put = testbench_put;
     param.cb_init = testbench_init;
     param.cb_uninit = testbench_uninit;
+#if TESTBENCH_ECHO_CHECK
+    param.cb_recv = testbench_recv_echo_check;
+    param.proto_abs.enable = 1;
+    param.proto_abs.head_len = sizeof(testbench_pkt_head_t);
+    param.proto_abs.pkg_max_len = TESTBENCH_PKT_MAXLEN;
+    param.proto_abs.get_payload_len = test_proto_get_payload_len;
+#else
     param.cb_recv = testbench_recv_echo;
     param.proto_abs.enable = 0;
+#endif
     param.opaque = &tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
@@ -223,12 +273,6 @@ static int testbench_server(int port)
     }
 
     return 0;
-}
-
-static int test_proto_get_payload_len(void *buf)
-{
-    testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
-    return head->payload_len;
 }
 
 static int testbench_client(int port)
@@ -268,7 +312,8 @@ static int testbench_client(int port)
     }
 
     for (i = 0; i < TESTBENCH_PKT_MAXLEN; i++) {
-        sendbuf[i] = (uint8_t)rand();
+        // sendbuf[i] = (uint8_t)rand();
+        sendbuf[i] = i;
     }
 
     while (1) {
@@ -286,6 +331,10 @@ static int testbench_client(int port)
 
             cnt++;
 
+            usleep(100000);
+        }
+
+        while (g_stop) {
             usleep(100000);
         }
     }

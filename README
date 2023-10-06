@@ -3,7 +3,7 @@
 --serv_ip=1.1.1.1
 --port_list=49000,49001,49002
 --transport_send_bps=10000           # 传输层限速值, 单位Bps(Byte per second) 不配置时默认为1000Bps
-
+--port_agent_offset=1                # server端发出的connect与client端监听的端口号偏移
 server模式:
 
 client模式:

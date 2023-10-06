@@ -96,6 +96,7 @@ typedef struct {
 
     int     mode;                   /* FGFW_WORKMODE_SERVER | FGFW_WORKMODE_CLIENT */
     uint32_t transport_send_bps;
+    int     port_agent_offset;
     char    serv_ip[16];
 
     int     n_port;

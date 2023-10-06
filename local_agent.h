@@ -21,6 +21,7 @@ typedef struct _fgfw_local_agent {
     fgfw_tunnel_t           *tunnel;
 
     int                     mode;           /* FGFW_WORKMODE_SERVER / FGFW_WORKMODE_CLIENT */
+    int                     port_agent_offset;
 
     fgfw_local_agent_conn_t local_conn_pool[FGFW_LOCAL_AGENT_MAX_CONN];
     fgfw_local_agent_conn_t *free_local_conn[FGFW_LOCAL_AGENT_MAX_CONN];
@@ -46,7 +47,7 @@ typedef struct _fgfw_local_agent {
     int (*local_conn_send)(struct _fgfw_local_agent *local_agent, fgfw_local_agent_conn_id agent_conn_id, void *buf, int len);
 } fgfw_local_agent_t;
 
-int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[]);
+int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, int port_agent_offset, fgfw_tunnel_t *tunnel, int n_local_agent_port, int local_agent_port_list[]);
 int fgfw_local_agent_destroy(fgfw_local_agent_t *local_agent);
 
 #endif
