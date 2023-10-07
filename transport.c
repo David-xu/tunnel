@@ -29,17 +29,21 @@ int fgfw_transport_pool_put(fgfw_transport_pool_t *transport_pool, fgfw_transpor
 }
 
 static int fgfw_transport_pending_enq(fgfw_transport_t *transport, void *buf, int len) {
-    int i, first, second, left = FGFW_PENDING_BUFSIZE - (transport->pending_buf_tail - transport->pending_buf_head);
+    int i, first, second, left;
+    
+    // pthread_mutex_lock(&(transport->transport_op_big_lock));
+
+    left = FGFW_PENDING_BUFSIZE - (transport->pending_buf_tail - transport->pending_buf_head);
 
     fgfw_assert((len & (FGFW_TRANSPORT_PKT_ALIGN - 1)) == 0);
 
     if (len > left) {
+        // pthread_mutex_unlock(&(transport->transport_op_big_lock));
+
         fgfw_warn("transport %d, buff afull, len %d\n", transport->transport_id, len);
         /* no enough pending buf left */
         return FGFW_RETVALUE_NOENOUGHRES;
     }
-
-    pthread_mutex_lock(&(transport->transport_op_big_lock));
 
     /* insert into pending buf */
     left = FGFW_PENDING_BUFSIZE - (transport->pending_buf_tail % FGFW_PENDING_BUFSIZE);
@@ -78,10 +82,12 @@ static int fgfw_transport_pending_enq(fgfw_transport_t *transport, void *buf, in
         }
     }
 
+    rte_wmb();
+
     /* enq */
     transport->pending_buf_tail += len;
 
-    pthread_mutex_unlock(&(transport->transport_op_big_lock));
+    // pthread_mutex_unlock(&(transport->transport_op_big_lock));
 
     return FGFW_RETVALUE_OK;
 }
@@ -113,12 +119,9 @@ static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
 {
     int ret, n_allow_send, n_pending;
 
-    pthread_mutex_lock(&(transport->transport_op_big_lock));
-
     n_pending = fgfw_transport_get_pending_num(transport);
 
     if (n_pending == 0) {
-        pthread_mutex_unlock(&(transport->transport_op_big_lock));
         return;
     }
     
@@ -133,8 +136,6 @@ static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
             fgfw_err("%s: vacc_host_write() return %d\n", transport->conn_desc, ret);
         }
     }
-
-    pthread_mutex_unlock(&(transport->transport_op_big_lock));
 }
 
 int fgfw_transport_fill_token(fgfw_transport_t *transport, int n_token)
@@ -171,10 +172,10 @@ int fgfw_transport_send(fgfw_transport_t *transport, void *buf, int len)
     if (ret) {
         /* need return this err */
     }
-
-    /* always do real send */
+#if 0
+    /* don't do real send, only do send after fill token */
     fgfw_transport_send_pending_try(transport);
-
+#endif
     return ret;
 }
 
@@ -200,7 +201,7 @@ int fgfw_transport_recv(fgfw_transport_t *transport, void *buf, int len)
             if (curlen > left) {
                 curlen = left;
             }
-            
+            fgfw_assert(offset == 0);
             memcpy(transport->align_tmp_buf + transport->align_tmp_buf_len, buf + offset, curlen);
 
             transport->align_tmp_buf_len += curlen;

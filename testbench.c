@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
     testbench_inst_t            inst_pool[TESTBENCH_MAX_INST];
     fgfw_epoll_thread_t         epoll_thread;
+    uint8_t                     sendbuf[TESTBENCH_PKT_MAXLEN];
 } testbench_ctx_t;
 
 static vacc_host_t* testbench_get(struct _vacc_host *vacc_host, void *opaque)
@@ -200,7 +201,8 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
 {
     static uint32_t total_len = 0;
     static uint16_t cnt = 0;
-    uint32_t crc_calc;
+    uint32_t crc_calc, i;
+    testbench_ctx_t *ctx = (testbench_ctx_t *)opaque;
     testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
     
     g_stop = 1;
@@ -212,6 +214,14 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
     fgfw_assert(head->magic == TESTBENCH_PKT_MAGIC);
     fgfw_assert(head->payload_len == g_payload_len_log[cnt]);
     crc_calc = fgfw_crc32c_sw(head + 1, head->payload_len);
+    if (head->crc != crc_calc) {
+        fgfw_err("head->crc != crc_calc\n");
+        for (i = 0; i < head->payload_len; i++) {
+            if (((uint8_t *)buf)[i + sizeof(testbench_pkt_head_t)] != ctx->sendbuf[i + sizeof(testbench_pkt_head_t)]) {
+                fgfw_assert(0);
+            }
+        }
+    }
     fgfw_assert(head->crc == crc_calc);
 
     total_len += len;
@@ -282,7 +292,6 @@ static int testbench_client(int port)
     vacc_host_t *cli;
     int ret, len, i;
     static uint16_t cnt = 0;
-    uint8_t sendbuf[TESTBENCH_PKT_MAXLEN];
 
     memset(&tb_ctx, 0, sizeof(testbench_ctx_t));
 
@@ -313,12 +322,12 @@ static int testbench_client(int port)
 
     for (i = 0; i < TESTBENCH_PKT_MAXLEN; i++) {
         // sendbuf[i] = (uint8_t)rand();
-        sendbuf[i] = i;
+        tb_ctx.sendbuf[i] = i;
     }
 
     while (1) {
-        testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)sendbuf;
-        len = rand() % (sizeof(sendbuf) - 1024);
+        testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)tb_ctx.sendbuf;
+        len = rand() % (sizeof(tb_ctx.sendbuf) - 1024);
         pkt_head->magic = TESTBENCH_PKT_MAGIC;
         pkt_head->cnt = cnt;
         pkt_head->payload_len = len;
@@ -326,7 +335,7 @@ static int testbench_client(int port)
 
         g_payload_len_log[cnt] = pkt_head->payload_len;
 
-        if (vacc_host_write(cli, sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
+        if (vacc_host_write(cli, tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
             fgfw_log("cnt %d, len %d\n", cnt, len);
 
             cnt++;

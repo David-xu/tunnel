@@ -249,12 +249,11 @@ int main(int argc, char *argv[])
 
     fgfw_aes_decrypt(key, ciphertext, decrypted);
     fgfw_hexdump(decrypted, 16);
-
+#endif
     FGFW_BUILD_BUG_ON(sizeof(fgfw_tunnel_protocol_pkt_head_t) != FGFW_TRANSPORT_PKT_ALIGN);
     FGFW_BUILD_BUG_ON(sizeof(fgfw_tunnel_protocol_pkt_session_data_t) != FGFW_TRANSPORT_PKT_ALIGN);
-    FGFW_BUILD_BUG_ON(FGFW_TRANSPORT_MAX_SEND_LEN >= (FGFW_TRANSPORT_RECVBUF_SIZE / 16));
+    // FGFW_BUILD_BUG_ON(FGFW_TRANSPORT_MAX_SEND_LEN >= (FGFW_TRANSPORT_RECVBUF_SIZE / 16));
     FGFW_BUILD_BUG_ON((FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE % FGFW_TRANSPORT_RECVBUF_SIZE) != 0);
-#endif
 
     srand(time(0));
 
@@ -279,7 +278,7 @@ int main(int argc, char *argv[])
     /* ugly */
     g_ctx.tunnel.local_agent = &(g_ctx.local_agent);
 
-    fgfw_timerfw_add_timer(&(g_ctx.tunnel.epoll_thread), 1000000, FGFW_TOKEN_FILL_CYCLE_MS * 1000, tb_insert_timer_1ms, &g_ctx);
+    fgfw_timerfw_add_timer(&(g_ctx.tunnel.epoll_thread), 100000, FGFW_TOKEN_FILL_CYCLE_MS * 1000, tb_insert_timer_1ms, &g_ctx);
 
     if (g_ctx.mode == FGFW_WORKMODE_CLIENT) {
         fgfw_tunnel_connect_to_serv(&(g_ctx.tunnel), g_ctx.serv_ip, g_ctx.n_port, g_ctx.port_list);

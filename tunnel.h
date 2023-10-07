@@ -1,11 +1,12 @@
 #ifndef _TUNNEL_H_
 #define _TUNNEL_H_
 
-#define FGFW_TUNNEL_SESSION_MAX                             64
+#define FGFW_TUNNEL_SESSION_MAX                             256
 #define FGFW_TUNNEL_BUNDLE_MAX                              16
 #define FGFW_TUNNEL_MAX_TRANSPORT_PER_BUNDLE                64
 
-#define FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE              (2 * 1024 * 1024)
+// #define FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE              (2 * 1024 * 1024)
+#define FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE              (256 * 1024)
 
 typedef struct _fgfw_tunnel_bundle {
     fgfw_tunnel_bundle_id                   bundle_id;

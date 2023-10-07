@@ -1,6 +1,18 @@
 #ifndef _UTIL_H_
 #define _UTIL_H_
 
+#ifndef rte_mb
+#define rte_mb()    _mm_mfence()
+#endif
+
+#ifndef rte_wmb
+#define rte_wmb()   _mm_sfence()
+#endif
+
+#ifndef rte_rmb
+#define rte_rmb()   _mm_lfence()
+#endif
+
 #define FGFW_P2V(p)                        ((char *)(p) - (char *)0)
 #define FGFW_V2P(v)                        ((void *)((char *)0 + (v)))
 #define FGFW_OFFSETOF(strtype, field)      FGFW_P2V(&(((strtype *)0)->field))

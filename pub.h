@@ -14,6 +14,9 @@
 #include <sys/timerfd.h>
 #include <sys/types.h>
 #include <openssl/aes.h>
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#include <immintrin.h>
 
 typedef int fgfw_transport_id;
 #define FGFW_TRANSPORT_ID_INVALID           ((fgfw_transport_id)(-1))
