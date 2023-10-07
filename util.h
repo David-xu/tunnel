@@ -137,8 +137,9 @@ static inline int single_token_bucket_insert(single_token_bucket_t *stb, int n_t
 /* return: number of token consumed */
 static inline int single_token_bucket_consume(single_token_bucket_t *stb, int n_token)
 {
-    if (n_token > stb->free) {
-        n_token = stb->free;
+    int old_free = stb->free;
+    if (n_token > old_free) {
+        n_token = old_free;
     }
 
     stb->free -= n_token;

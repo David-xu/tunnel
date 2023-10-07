@@ -112,13 +112,15 @@ static int fgfw_transport_pending_deq(fgfw_transport_t *transport, void *buf, in
 static void fgfw_transport_send_pending_try(fgfw_transport_t *transport)
 {
     int ret, n_allow_send, n_pending;
+
+    pthread_mutex_lock(&(transport->transport_op_big_lock));
+
     n_pending = fgfw_transport_get_pending_num(transport);
 
     if (n_pending == 0) {
+        pthread_mutex_unlock(&(transport->transport_op_big_lock));
         return;
     }
-
-    pthread_mutex_lock(&(transport->transport_op_big_lock));
     
     /* get the number allow to send */
     n_allow_send = single_token_bucket_consume(&(transport->send_stb), n_pending);
