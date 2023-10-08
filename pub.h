@@ -18,6 +18,8 @@
 #include <emmintrin.h>
 #include <immintrin.h>
 
+// #define FGFW_CONFIG_SOCKBUFSIZE             8192
+
 typedef int fgfw_transport_id;
 #define FGFW_TRANSPORT_ID_INVALID           ((fgfw_transport_id)(-1))
 

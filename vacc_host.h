@@ -107,6 +107,8 @@ typedef struct _vacc_host {
 
     protocol_abstract_t         proto_abs;
 
+    int                         recvbuf_size;
+    int                         sendbuf_size;
     /*
      * insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER : sock_fd = server listen socket fd
      * insttype == VACC_HOST_INSTTYPE_SERVER_INST     : sock_fd = instance socket fd
@@ -144,6 +146,9 @@ typedef struct {
     vacc_host_cb_recv_ex        cb_recv_ex;
 
     protocol_abstract_t         proto_abs;
+
+    int recvbuf_size;
+    int sendbuf_size;
 
     int  n_listen;
     void *opaque;

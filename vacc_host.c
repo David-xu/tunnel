@@ -31,6 +31,19 @@ int helper_epoll_del(int epoll_fd, int fd, void *data)
     return epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, &event);
 }
 
+static void vacc_host_setsockbuf_size(vacc_host_t *vacc_host, int recvbuf_size, int sendbuf_size)
+{
+    vacc_host->recvbuf_size = recvbuf_size;
+    vacc_host->sendbuf_size = sendbuf_size;
+
+    if (recvbuf_size) {
+        setsockopt(vacc_host->sock_fd, SOL_SOCKET, SO_RCVBUF, &recvbuf_size, sizeof(recvbuf_size));
+    }
+    if (sendbuf_size) {
+        setsockopt(vacc_host->sock_fd, SOL_SOCKET, SO_SNDBUF, &sendbuf_size, sizeof(sendbuf_size));
+    }
+}
+
 static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_param_t *param)
 {
     int ret, len, on;
@@ -80,6 +93,8 @@ static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_p
             return VACC_HOST_RET_ACCEPT_FAILD;
         }
 
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+
         /* build relation to listen socket */
         vacc_host->server_listener = param->u.uds.server_listener;
         vacc_host->server_listener->n_client_inst++;
@@ -94,6 +109,8 @@ static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_p
         if (vacc_host->sock_fd < 0) {
             return VACC_HOST_RET_SOCKET_FAILD;
         }
+
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
 
         memset(&srv_addr, 0, sizeof(srv_addr));
         srv_addr.sin_family = AF_INET;
@@ -130,6 +147,8 @@ static int vacc_host_create_udp(vacc_host_t *vacc_host, const vacc_host_create_p
         on = 1;
         setsockopt(vacc_host->sock_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+
         memset(&srv_addr, 0, sizeof(srv_addr));
         srv_addr.sin_family = AF_INET;
         if (strlen(param->u.udp.srv_ip) == 0) {
@@ -151,6 +170,8 @@ static int vacc_host_create_udp(vacc_host_t *vacc_host, const vacc_host_create_p
         if (vacc_host->sock_fd < 0) {
             return VACC_HOST_RET_SOCKET_FAILD;
         }
+
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
 
         memset(&srv_addr, 0, sizeof(srv_addr));
         srv_addr.sin_family = AF_INET;
@@ -213,6 +234,8 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
             return VACC_HOST_RET_ACCEPT_FAILD;
         }
 
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+
         /* build relation to listen socket */
         vacc_host->server_listener = param->u.uds.server_listener;
         vacc_host->server_listener->n_client_inst++;
@@ -227,6 +250,8 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
         if (vacc_host->sock_fd < 0) {
             return VACC_HOST_RET_SOCKET_FAILD;
         }
+
+        vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
 
         memset(&srv_un, 0, sizeof(srv_un));
         srv_un.sun_family = AF_UNIX;
@@ -264,14 +289,16 @@ static int vacc_host_send_data_normal(vacc_host_t *vacc_host, void *buf, uint32_
     struct iovec iov;
     struct msghdr msgh;
     int ret;
+    uint32_t already_send = 0;
 
     if (vacc_host->sock_fd < 0) {
         return VACC_HOST_RET_INVALID_INST;
     }
 
+__send_more:
     memset(&msgh, 0, sizeof(msgh));
-    iov.iov_base = buf;
-    iov.iov_len = len;
+    iov.iov_base = buf + already_send;
+    iov.iov_len = len - already_send;
 
     msgh.msg_iov = &iov;
     msgh.msg_iovlen = 1;
@@ -284,7 +311,18 @@ retry:
     }
 
     if (ret < 0) {
+        printf("##############  sendmsg() return faild, ret %d, errno %d\n", ret, errno);
         return VACC_HOST_RET_SENDMSG_FAILD;
+    }
+    already_send += ret;
+
+    if (already_send < len) {
+        printf("##############  sendmsg() return %d already_send %d len %d\n", ret, already_send, len);
+        goto __send_more;
+    }
+
+    if (already_send != len) {
+        printf("##############  err already_send %d != len %d\n", already_send, len);
     }
 
     return VACC_HOST_RET_OK;
@@ -543,6 +581,8 @@ int vacc_host_create(vacc_host_t *vacc_host, const vacc_host_create_param_t *par
         vacc_host->cb_recv_ex = param->cb_recv_ex;
         vacc_host->proto_abs = param->proto_abs;
         vacc_host->opaque = param->opaque;
+        vacc_host->recvbuf_size = param->recvbuf_size;
+        vacc_host->sendbuf_size = param->sendbuf_size;
 
         /* call cb_init */
         vacc_host->cb_init(vacc_host, vacc_host->opaque);
@@ -617,6 +657,8 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
     param.cb_recv = vacc_host->cb_recv;
     param.proto_abs = vacc_host->proto_abs;
     param.opaque = vacc_host->opaque;
+    param.recvbuf_size = vacc_host->recvbuf_size;
+    param.sendbuf_size = vacc_host->sendbuf_size;
     param.u.uds.server_listener = vacc_host;        /* attach to server listener instance */
     ret = vacc_host_create(new_inst, &param);
     if (ret != VACC_HOST_RET_OK) {

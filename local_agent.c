@@ -221,6 +221,10 @@ static fgfw_local_agent_conn_id local_agent_conn_open(fgfw_local_agent_t *local_
     param.cb_uninit = local_agent_vacc_host_uninit;
     param.cb_recv = local_agent_vacc_host_recv;
     param.proto_abs.enable = 0;
+#if FGFW_CONFIG_SOCKBUFSIZE
+    param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+    param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+#endif
     param.opaque = local_agent;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
@@ -320,6 +324,10 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, int port_
         param.cb_uninit = local_agent_vacc_host_uninit;
         param.cb_recv = local_agent_vacc_host_recv;
         param.proto_abs.enable = 0;
+#if FGFW_CONFIG_SOCKBUFSIZE
+        param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+        param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+#endif
         param.opaque = local_agent;
         strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
         param.u.tcp.srv_port = local_agent_port_list[i];

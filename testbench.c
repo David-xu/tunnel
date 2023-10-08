@@ -267,6 +267,10 @@ static int testbench_server(int port)
     param.cb_recv = testbench_recv_echo;
     param.proto_abs.enable = 0;
 #endif
+#if FGFW_CONFIG_SOCKBUFSIZE
+    param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+    param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+#endif
     param.opaque = &tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
@@ -309,6 +313,10 @@ static int testbench_client(int port)
     param.proto_abs.head_len = sizeof(testbench_pkt_head_t);
     param.proto_abs.pkg_max_len = TESTBENCH_PKT_MAXLEN;
     param.proto_abs.get_payload_len = test_proto_get_payload_len;
+#if FGFW_CONFIG_SOCKBUFSIZE
+    param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+    param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
+#endif
     param.opaque = &tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
