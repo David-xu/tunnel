@@ -1,24 +1,49 @@
 #include "pub.h"
 
-static fgfw_tunnel_session_id fgfw_tunnel_session_find_by_session_key(fgfw_tunnel_t *tunnel, uint32_t session_key)
+int fgfw_tunnel_session_id_valid(int mode, fgfw_tunnel_session_id session_id) {
+    if (mode == FGFW_WORKMODE_SERVER) {
+       return ((session_id >= FGFW_TUNNEL_SERVER_SESSION_ID_OFFSET) && (session_id < (FGFW_TUNNEL_SERVER_SESSION_ID_OFFSET + FGFW_TUNNEL_SESSION_MAX)));
+    } else {
+        fgfw_assert(mode == FGFW_WORKMODE_CLIENT);
+        return ((session_id >= FGFW_TUNNEL_CLIENT_SESSION_ID_OFFSET) && (session_id < (FGFW_TUNNEL_CLIENT_SESSION_ID_OFFSET + FGFW_TUNNEL_SESSION_MAX)));
+    }
+}
+
+static fgfw_tunnel_session_t * fgfw_tunnel_get_session(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id)
 {
-    fgfw_assert(session_key < FGFW_TUNNEL_SESSION_MAX);
-    /* session_key is the remote session_id */
-    return session_key;
+    fgfw_assert(fgfw_tunnel_session_id_valid(tunnel->mode, session_id));
+    int offset;
+
+    if (tunnel->mode == FGFW_WORKMODE_SERVER) {
+        offset = session_id - FGFW_TUNNEL_SERVER_SESSION_ID_OFFSET;
+    } else {
+        fgfw_assert(tunnel->mode == FGFW_WORKMODE_CLIENT);
+        offset = session_id - FGFW_TUNNEL_CLIENT_SESSION_ID_OFFSET;
+    }
+
+    return &(tunnel->_session_res[offset]);
 }
 
 static void fgfw_tunnel_session_set_agent_conn_id(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id, fgfw_local_agent_conn_id agent_conn_id)
 {
-    fgfw_tunnel_session_t *session = &(tunnel->_session_res[session_id]);
-
-    fgfw_assert((session_id >= 0) && (session_id < FGFW_TUNNEL_SESSION_MAX));
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     
     session->agent_conn_id = agent_conn_id;
 }
 
+static int fgfw_tunnel_session_set_remote_session_id(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id, fgfw_tunnel_session_id remote_session_id)
+{
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
+
+    fgfw_log("session_id 0x%x, set remote session 0x%x\n", session_id, remote_session_id);
+    session->remote_session_id = remote_session_id;
+
+    return FGFW_RETVALUE_OK;
+}
+
 static void fgfw_tunnel_session_ring_buf_drain(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id)
 {
-    fgfw_tunnel_session_t *session = &(tunnel->_session_res[session_id]);
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     int pending_len = session->recv_ring_tail - session->recv_ring_head;
     int first, second, offset;
     offset = session->recv_ring_head % FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE;
@@ -39,7 +64,7 @@ static void fgfw_tunnel_session_ring_buf_drain(fgfw_tunnel_t *tunnel, fgfw_tunne
     session->recv_ring_head += pending_len;
 }
 
-static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fgfw_local_agent_conn_id agent_conn_id, fgfw_tunnel_bundle_id bundle_id, uint32_t port, uint32_t new_session_key)
+static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fgfw_local_agent_conn_id agent_conn_id, fgfw_tunnel_bundle_id bundle_id, uint32_t port)
 {
     fgfw_tunnel_session_t *new_session;
 
@@ -56,10 +81,12 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
 
     /**/
     new_session->session_state = FGFW_TUNNEL_SESSION_STATE_INIT;
-    new_session->tunnel = tunnel;
     new_session->agent_conn_id = agent_conn_id;
     new_session->bundle_id = bundle_id;
+    new_session->remote_session_id = FGFW_TUNNEL_SESSION_ID_INVALID;
     new_session->session_offset_send = 0;
+    new_session->recv_ring_tail = 0;
+    new_session->recv_ring_head = 0;
 
     /* init session recv range mngr*/
     fgfw_range_res_init(&(new_session->recv_range), 0, 0xffffffffffffffffULL, 1);
@@ -75,7 +102,7 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
         /* do session create */
         new_session->session_state = FGFW_TUNNEL_SESSION_STATE_CREATING;
         /* 1. send control pkt */
-        tunnel_proc_send_req_session_new(tunnel, transport, port, new_session->id, &new_session->create_challenge);
+        tunnel_proc_send_req_session_new(tunnel, transport, port, new_session->local_session_id, &new_session->create_challenge);
         
         /* 2. wait for ack */
         while (new_session->session_state == FGFW_TUNNEL_SESSION_STATE_CREATING) {
@@ -83,7 +110,6 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
         }
     } else {
         /* server, session create no need to send any pkt */
-        new_session->session_key = new_session_key;
         new_session->session_state = FGFW_TUNNEL_SESSION_STATE_READY;
     }
 
@@ -102,15 +128,13 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
         fgfw_listadd_tail(&(new_session->node), &(tunnel->active_session_list));
         tunnel->n_active_session++;
 
-        return new_session->id;
+        return new_session->local_session_id;
     }
 }
 
 static int fgfw_tunnel_session_close(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id)
 {
-    fgfw_tunnel_session_t *session = &(tunnel->_session_res[session_id]);
-
-    fgfw_assert((session_id >= 0) && (session_id < FGFW_TUNNEL_SESSION_MAX));
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     
     if (session->session_state == FGFW_TUNNEL_SESSION_STATE_FREE) {
         fgfw_warn("session id %d, already freed\n", session_id);
@@ -140,7 +164,7 @@ static int fgfw_tunnel_session_close(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_
 
 static int fgfw_tunnel_session_send(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id, void *buf, int len)
 {
-    fgfw_tunnel_session_t *session = &(tunnel->_session_res[session_id]);
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     fgfw_tunnel_protocol_pkt_head_t *pkt_head;
     fgfw_tunnel_protocol_pkt_session_data_t *session_data_head;
     fgfw_transport_t *transport;
@@ -148,15 +172,17 @@ static int fgfw_tunnel_session_send(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_i
     int ret, send_len = 0, left_len = len, cur_len;
     uint8_t sendbuf[FGFW_TRANSPORT_MAX_SEND_LEN];
 
+    fgfw_assert(fgfw_tunnel_session_id_valid(tunnel->mode, session_id));
+
     pkt_head = (fgfw_tunnel_protocol_pkt_head_t *)sendbuf;
     session_data_head = (fgfw_tunnel_protocol_pkt_session_data_t *)(pkt_head + 1);
-
     //
     if (session->session_state != FGFW_TUNNEL_SESSION_STATE_READY) {
         return FGFW_RETVALUE_SESSION_NOT_READY;
     }
 
     fgfw_assert((session->bundle_id >= 0) && (session->bundle_id < FGFW_TUNNEL_BUNDLE_MAX));
+    fgfw_assert(session->remote_session_id != FGFW_TUNNEL_SESSION_ID_INVALID);
 
     while (left_len) {
         /* get transport */
@@ -180,8 +206,9 @@ __retry_rand:
 
         fgfw_assert(pkt_head->align_len <= FGFW_TRANSPORT_MAX_SEND_LEN);
 
-        session_data_head->magic = FGFW_TUNNEL_PROTOCOL_MAGIC;
-        session_data_head->session_key = session->session_key;
+        // session_data_head->magic = FGFW_TUNNEL_PROTOCOL_MAGIC;
+        session_data_head->src_session_id = session->local_session_id;
+        session_data_head->dst_session_id = session->remote_session_id;
         session_data_head->session_offset = session->session_offset_send + send_len;
 
         memcpy(session_data_head + 1, buf + send_len, cur_len);
@@ -206,12 +233,12 @@ __retry_send:
 
 static int fgfw_tunnel_session_recv_1copy(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_id session_id, uint64_t session_offset, void *buf, uint64_t len)
 {
-    fgfw_tunnel_session_t *session = &(tunnel->_session_res[session_id]);
+    fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     uint64_t first, second;
     uint64_t offset = session_offset + len - session->recv_ring_head, size;
     int ret;
 
-    fgfw_assert(session_id == session->id);
+    fgfw_assert(session_id == session->local_session_id);
 
     if (offset >= FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE) {
         fgfw_err("session id %d, session_offset 0x%lx, len 0x%lx, session->recv_ring_head 0x%lx\n",
@@ -239,12 +266,12 @@ static int fgfw_tunnel_session_recv_1copy(fgfw_tunnel_t *tunnel, fgfw_tunnel_ses
 
         fgfw_tunnel_session_ring_buf_drain(tunnel, session_id);
     } else if (ret == -3) {
-        fgfw_err("session_id %d, over lap, something wrong.\n", session->id);
+        fgfw_err("session_id %d, over lap, something wrong.\n", session->local_session_id);
         fgfw_assert(0);
     } else {
         /* out-of-older recv */
         fgfw_dbg(FGFW_DBGFLAG_SESSION, "out-of-older, session id %d, offset 0x%lx, tail 0x%lx, head 0x%lx\n",
-            session->id, session_offset, session->recv_ring_tail, session->recv_ring_head);
+            session->local_session_id, session_offset, session->recv_ring_tail, session->recv_ring_head);
     }
 
     return FGFW_RETVALUE_OK;
@@ -403,6 +430,11 @@ int fgfw_tunnel_bundle_remove_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundl
     }
 
     bundle->n_transport--;
+
+    if (bundle->n_transport == 0) {
+        /* remove this bundle */
+        fgfw_tunnel_bundle_del(tunnel, bundle->bundle_id);
+    }
 
     return FGFW_RETVALUE_OK;
 }
@@ -603,6 +635,9 @@ static int tunnel_transport_uninit(struct _vacc_host *vacc_host, void *opaque)
         return -1;
     }
 
+    /* remove this transport */
+    fgfw_tunnel_bundle_remove_transport(tunnel, transport->transport_belongs_to_bundle_id, transport->transport_id);
+
     /* remove from epoll thread mngr */
     fgfw_epoll_thread_reg_uninst(&(tunnel->epoll_thread), &(transport->epoll_inst));
     transport->epoll_inst.fd = -1;
@@ -639,12 +674,16 @@ int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, uint32_t transport_send_
     vacc_host_t *vacc_host;
     fgfw_transport_t *transport;
     vacc_host_create_param_t param;
+    fgfw_tunnel_session_t *session;
+    fgfw_tunnel_session_id session_id;
 
     if ((mode != FGFW_WORKMODE_SERVER) && (mode != FGFW_WORKMODE_CLIENT)) {
         return FGFW_RETVALUE_INVALID_PARAM;
     }
 
     memset(tunnel, 0, sizeof(fgfw_tunnel_t));
+
+    tunnel->mode = mode;
 
     tunnel->transport_send_bps = transport_send_bps;
     memcpy(tunnel->default_key, default_key, sizeof(tunnel->default_key));
@@ -660,9 +699,17 @@ int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, uint32_t transport_send_
 
     /* init free session list */
     for (i = 0; i < FGFW_TUNNEL_SESSION_MAX; i++) {
-        tunnel->_session_res[i].id = i;
-        tunnel->_session_res[i].session_state = FGFW_TUNNEL_SESSION_STATE_FREE;
-        tunnel->free_session_list[i] = &(tunnel->_session_res[i]);
+        if (mode == FGFW_WORKMODE_SERVER) {
+            session_id = FGFW_TUNNEL_SERVER_SESSION_ID_OFFSET + i;
+        } else {
+            fgfw_assert(mode == FGFW_WORKMODE_CLIENT);
+            session_id = FGFW_TUNNEL_CLIENT_SESSION_ID_OFFSET + i;
+        }
+        session = fgfw_tunnel_get_session(tunnel, session_id);
+        session->tunnel = tunnel;
+        session->local_session_id = session_id;
+        session->session_state = FGFW_TUNNEL_SESSION_STATE_FREE;
+        tunnel->free_session_list[i] = session;
     }
     tunnel->free_session_tail = FGFW_TUNNEL_SESSION_MAX;
     tunnel->free_session_head = 0;
@@ -708,8 +755,6 @@ int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, uint32_t transport_send_
   
     }
 
-    tunnel->mode = mode;
-
     tunnel->session_open = fgfw_tunnel_session_open;
     tunnel->session_close = fgfw_tunnel_session_close;
     tunnel->session_send = fgfw_tunnel_session_send;
@@ -723,7 +768,7 @@ int fgfw_tunnel_destroy(fgfw_tunnel_t *tunnel)
     fgfw_tunnel_session_t *p, *n;
 
     FGFW_LISTENTRYWALK_SAVE(p, n, &(tunnel->active_session_list), node) {
-        tunnel->session_close(tunnel, p->id);
+        tunnel->session_close(tunnel, p->local_session_id);
     }
 
     fgfw_epoll_thread_destroy(&(tunnel->epoll_thread));
@@ -770,6 +815,21 @@ int fgfw_tunnel_connect_to_serv(fgfw_tunnel_t *tunnel, char *serv_ip, int n_port
             return FGFW_RETVALUE_ERR;
         }
     }
+
+    return FGFW_RETVALUE_OK;
+}
+
+/*
+ * close transport
+ */
+int fgfw_invalid_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_id transport_id)
+{
+    fgfw_transport_t *transport = &(tunnel->transport_pool._transport_res[transport_id]);
+
+    fgfw_assert((transport_id >= 0) && (transport_id < FGFW_MAX_TRANSPORT));
+
+    /* close transport */
+    vacc_host_destroy(&(transport->conn));
 
     return FGFW_RETVALUE_OK;
 }
@@ -848,7 +908,7 @@ int tunnel_proc_send_resp_bundle_join(fgfw_tunnel_t *tunnel, fgfw_transport_t *t
     return len;
 }
 
-int tunnel_proc_send_req_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t port, fgfw_tunnel_session_id orig_session_id, uint32_t *create_challenge)
+int tunnel_proc_send_req_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t port, fgfw_tunnel_session_id src_session_id, uint32_t *create_challenge)
 {
     int ret, len = sizeof(fgfw_tunnel_protocol_pkt_head_t) + sizeof(fgfw_tunnel_protocol_pkt_session_new_req_t);
     uint8_t sendbuf[len];
@@ -864,7 +924,7 @@ int tunnel_proc_send_req_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *tr
 
     session_new_req->magic = FGFW_TUNNEL_PROTOCOL_MAGIC;
     session_new_req->port = port;
-    session_new_req->orig_session_id = orig_session_id;
+    session_new_req->src_session_id = src_session_id;
 
     /* save challenge */
     *create_challenge = pkt_head->challenge;
@@ -875,14 +935,14 @@ int tunnel_proc_send_req_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *tr
         fgfw_err("fgfw_transport_send() return %d\n", ret);
         return ret;
     } else {
-        fgfw_dbg(FGFW_DBGFLAG_PROTOCOL, "transport %d, challenge 0x%x, port %d, orig_session_id %d\n",
-            transport->transport_id, pkt_head->challenge, port, orig_session_id);
+        fgfw_dbg(FGFW_DBGFLAG_PROTOCOL, "transport %d, challenge 0x%x, port %d, src_session_id %d\n",
+            transport->transport_id, pkt_head->challenge, port, src_session_id);
     }
 
     return len;
 }
 
-int tunnel_proc_send_resp_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, uint32_t session_key)
+int tunnel_proc_send_resp_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, fgfw_tunnel_session_id src_session_id, fgfw_tunnel_session_id dst_session_id)
 {
     int len = sizeof(fgfw_tunnel_protocol_pkt_head_t) + sizeof(fgfw_tunnel_protocol_pkt_session_new_resp_t);
     uint8_t sendbuf[len];
@@ -898,7 +958,8 @@ int tunnel_proc_send_resp_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *t
 
     session_new_resp->magic = FGFW_TUNNEL_PROTOCOL_MAGIC;
     session_new_resp->ret = ret;
-    session_new_resp->session_key = session_key;
+    session_new_resp->src_session_id = src_session_id;
+    session_new_resp->dst_session_id = dst_session_id;
 
     /* do send */
     ret = fgfw_transport_send(transport, sendbuf, pkt_head->align_len);
@@ -906,8 +967,8 @@ int tunnel_proc_send_resp_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *t
         fgfw_err("fgfw_transport_send() return %d\n", ret);
         return ret;
     } else {
-        fgfw_dbg(FGFW_DBGFLAG_PROTOCOL, "transport %d, challenge 0x%x, ret %d, session_key %d\n",
-            transport->transport_id, challenge, ret, session_key);
+        fgfw_dbg(FGFW_DBGFLAG_PROTOCOL, "transport %d, challenge 0x%x, ret %d, src_session_id 0x%x, dst_session_id 0x%x\n",
+            transport->transport_id, challenge, ret, src_session_id, dst_session_id);
     }
 
     return len;
@@ -990,6 +1051,7 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         uint32_t offset;
         fgfw_tunnel_protocol_pkt_session_new_req_t *session_new_req;
         int ret;
+        fgfw_tunnel_session_id new_session_id;
 
         offset = transport->recv_buf_head + sizeof(fgfw_tunnel_protocol_pkt_head_t);
         session_new_req = (fgfw_tunnel_protocol_pkt_session_new_req_t *)&(transport->recv_buf[offset % FGFW_TRANSPORT_RECVBUF_SIZE]);
@@ -1004,7 +1066,6 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
             ret = FGFW_RETVALUE_PROTO_ERR;
             fgfw_err("invalid magic 0x%x\n, transport %d\n", session_new_req->magic, transport->transport_id);
         } else {
-            fgfw_tunnel_session_id new_session_id;
             fgfw_tunnel_bundle_id bundle_id;
             bundle_id = fgfw_tunnel_find_bundle_by_transport(tunnel, transport->transport_id);
             if (bundle_id < 0) {
@@ -1014,13 +1075,16 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
                 fgfw_assert(bundle_id == transport->transport_belongs_to_bundle_id);
 
                 /* session open, server */
-                new_session_id = tunnel->session_open(tunnel, FGFW_AGENT_CONN_ID_INVALID, transport->transport_belongs_to_bundle_id, -1, session_new_req->orig_session_id);
+                new_session_id = tunnel->session_open(tunnel, FGFW_AGENT_CONN_ID_INVALID, transport->transport_belongs_to_bundle_id, -1);
                 if (new_session_id < 0) {
                     ret = FGFW_RETVALUE_SESSION_CREATE_FAILD;
                 } else {
                     /* create local agent conn */
                     fgfw_local_agent_conn_id agent_conn_id = tunnel->local_agent->local_conn_open(tunnel->local_agent, new_session_id, session_new_req->port);
                     fgfw_assert(agent_conn_id >= 0);
+
+                    /* set remote session id into this new session, already in new session req pkt */
+                    fgfw_tunnel_session_set_remote_session_id(tunnel, new_session_id, session_new_req->src_session_id);
                     /* set agent conn id into session */
                     fgfw_tunnel_session_set_agent_conn_id(tunnel, new_session_id, agent_conn_id);
 
@@ -1029,8 +1093,8 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
             }
         }
 
-        /* send ack */
-        tunnel_proc_send_resp_session_new(tunnel, transport, pkt_head->challenge, ret, session_new_req->orig_session_id);
+        /* send ack, src_session_id: new create session, dst_session_id: remote session id which store in 'session req' pkt */
+        tunnel_proc_send_resp_session_new(tunnel, transport, pkt_head->challenge, ret, new_session_id, session_new_req->src_session_id);
         
         /* pkt already comsumed */
         transport->recv_buf_head += pkt_head->align_len;
@@ -1073,31 +1137,44 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         uint32_t offset;
         fgfw_tunnel_protocol_pkt_session_new_resp_t *session_new_resp;
         fgfw_tunnel_session_t *orig_session;
+        fgfw_tunnel_session_id orig_session_id;
+
         offset = transport->recv_buf_head + sizeof(fgfw_tunnel_protocol_pkt_head_t);
         session_new_resp = (fgfw_tunnel_protocol_pkt_session_new_resp_t *)&(transport->recv_buf[offset % FGFW_TRANSPORT_RECVBUF_SIZE]);
+        orig_session_id = session_new_resp->dst_session_id;
+        orig_session = fgfw_tunnel_get_session(tunnel, orig_session_id);
+
+        /* only check  */
+        if (fgfw_tunnel_session_id_valid(tunnel->mode, orig_session_id) == 0) {
+            fgfw_err("transport id %d, invalid pkt: src_session_id 0x%x, dst_session_id 0x%x\n",
+                transport->transport_id, session_new_resp->src_session_id, session_new_resp->dst_session_id);
+            fgfw_invalid_pkt(tunnel, transport->transport_id);
+            break;
+        }
+
         if (tunnel->mode != FGFW_WORKMODE_CLIENT) {
             fgfw_err("tunnel in server mode, transport %d.\n", transport->transport_id);
+            fgfw_assert(0);
         } else {
-            fgfw_assert(session_new_resp->orig_session_id < FGFW_TUNNEL_SESSION_MAX);
-            orig_session = &(tunnel->_session_res[session_new_resp->orig_session_id]);
             fgfw_assert(orig_session->session_state == FGFW_TUNNEL_SESSION_STATE_CREATING);
 
             if (session_new_resp->ret) {
                 orig_session->create_ret = session_new_resp->ret;
                 orig_session->session_state = FGFW_TUNNEL_SESSION_STATE_CREATE_FAILD;
                 
-                fgfw_err("session new resp ret %d, transport %d, orig session id %d\n",
-                    session_new_resp->ret, transport->transport_id, session_new_resp->orig_session_id);
+                fgfw_err("session new resp ret %d, transport %d, src_session_id 0x%x, dst_session_id 0x%x\n",
+                    session_new_resp->ret, transport->transport_id, session_new_resp->src_session_id, session_new_resp->dst_session_id);
             } else if (pkt_head->challenge != orig_session->create_challenge) {
                 orig_session->create_ret = FGFW_RETVALUE_CHALLENGE_NOT_MATCH;
                 orig_session->session_state = FGFW_TUNNEL_SESSION_STATE_CREATE_FAILD;
 
-                fgfw_err("session new resp ret %d, transport %d, orig session id %d, challenge not match 0x%x != 0x%x\n",
-                    session_new_resp->ret, transport->transport_id, session_new_resp->orig_session_id,
+                fgfw_err("session new resp ret %d, transport %d, src_session_id 0x%x, dst_session_id 0x%x, challenge not match 0x%x != 0x%x\n",
+                    session_new_resp->ret, transport->transport_id, session_new_resp->src_session_id, session_new_resp->dst_session_id,
                     pkt_head->challenge, orig_session->create_challenge);
             } else {
                 orig_session->session_state = FGFW_TUNNEL_SESSION_STATE_READY;
-                orig_session->session_key = session_new_resp->session_key;
+                /*  */
+                fgfw_tunnel_session_set_remote_session_id(tunnel, orig_session_id, session_new_resp->src_session_id);
             }
         }
 
@@ -1110,8 +1187,8 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         break;
     case FGFW_TP_TYPE_SESSION_DATA:
     {
-        fgfw_tunnel_session_id dest_session_id;
         fgfw_tunnel_protocol_pkt_session_data_t *session_data_head;
+        fgfw_tunnel_session_t *dst_session;
         void *buf_fitst, *buf_second;
         int first_len, second_len;
         uint32_t offset, data_len;
@@ -1119,11 +1196,12 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
 
         offset = transport->recv_buf_head + sizeof(fgfw_tunnel_protocol_pkt_head_t);
         session_data_head = (fgfw_tunnel_protocol_pkt_session_data_t *)&(transport->recv_buf[offset % FGFW_TRANSPORT_RECVBUF_SIZE]);
+#if 0
         if (session_data_head->magic != FGFW_TUNNEL_PROTOCOL_MAGIC) {
             fgfw_err("invalid magic 0x%x, just stop\n", session_data_head->magic);
             fgfw_assert(0);
         }
-
+#endif
         offset += sizeof(fgfw_tunnel_protocol_pkt_session_data_t);
         fgfw_assert(pkt_head->real_len > (sizeof(fgfw_tunnel_protocol_pkt_head_t) + sizeof(fgfw_tunnel_protocol_pkt_session_data_t)));
         data_len = pkt_head->real_len - sizeof(fgfw_tunnel_protocol_pkt_head_t) - sizeof(fgfw_tunnel_protocol_pkt_session_data_t);
@@ -1136,23 +1214,34 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         if (second_len) {
             buf_second = transport->recv_buf;
         }
-        dest_session_id = fgfw_tunnel_session_find_by_session_key(tunnel, session_data_head->session_key);
-        if (dest_session_id < 0) {
-            fgfw_err("can't find session, session key 0x%x\n", session_data_head->session_key);
-            fgfw_assert(0);
+
+        if (fgfw_tunnel_session_id_valid(tunnel->mode, session_data_head->dst_session_id) == 0) {
+            fgfw_err("transport %d, invalid dst_session_id 0x%x\n",
+                transport->transport_id, session_data_head->dst_session_id);
+            break;
         }
-        ret = tunnel->session_recv(tunnel, dest_session_id, session_data_head->session_offset, buf_fitst, first_len, buf_second, second_len);
-        if (ret == FGFW_RETVALUE_OK) {
-            transport->recv_buf_head += pkt_head->align_len;
+
+        dst_session = fgfw_tunnel_get_session(tunnel, session_data_head->dst_session_id);
+
+        if (dst_session->remote_session_id != (fgfw_tunnel_session_id)session_data_head->src_session_id) {
+            fgfw_err("transport %d, invaild, src_sessin_id 0x%x != record remote_seesion_id 0x%x\n",
+                transport->transport_id, session_data_head->src_session_id, dst_session->remote_session_id);
+            fgfw_assert(0);
         } else {
-            /* todo: */
-            fgfw_assert(0);
+            ret = tunnel->session_recv(tunnel, session_data_head->dst_session_id, session_data_head->session_offset, buf_fitst, first_len, buf_second, second_len);
+            if (ret == FGFW_RETVALUE_OK) {
+                transport->recv_buf_head += pkt_head->align_len;
+            } else {
+                /* todo: */
+                fgfw_assert(0);
+            }
         }
+
         break;
     }
     default:
         fgfw_err("invalid type 0x%x, just stop\n", pkt_head->tp_type);
-        fgfw_assert(0);
+        fgfw_invalid_pkt(tunnel, transport->transport_id);
     }
 
     return FGFW_RETVALUE_OK;

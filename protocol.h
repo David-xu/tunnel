@@ -53,30 +53,32 @@ typedef struct {
 typedef struct {
     uint32_t        magic;
     uint32_t        port;
-    uint32_t        orig_session_id;
+    uint32_t        src_session_id;
 } fgfw_tunnel_protocol_pkt_session_new_req_t;
 
 typedef struct {
     uint32_t        magic;
     int             ret;
-    uint32_t        orig_session_id;
-    uint32_t        session_key;                            /* produced by server */
+    uint32_t        src_session_id;                         /* produced by server */
+    uint32_t        dst_session_id;                         /* origin session id in client */
 } fgfw_tunnel_protocol_pkt_session_new_resp_t;
 
 typedef struct {
     uint32_t        magic;
-    uint32_t        session_key;                            /*  */
+    uint32_t        src_session_id;                         /*  */
+    uint32_t        dst_session_id;                         /*  */
 } fgfw_tunnel_protocol_pkt_session_del_req_t;
 
 typedef struct {
     uint32_t        magic;
     int             ret;
-    uint32_t        session_key;                            /*  */
+    uint32_t        src_session_id;                         /*  */
+    uint32_t        dst_session_id;                         /*  */
 } fgfw_tunnel_protocol_pkt_session_del_resp_t;
 
 typedef struct {
-    uint32_t        magic;
-    uint32_t        session_key;                            /* indicate session, after 'session create' proc, produced by tunnel server */
+    uint32_t        src_session_id;
+    uint32_t        dst_session_id;                         /* indicate session, after 'session create' proc, produced by tunnel server */
     uint64_t        session_offset;
 } fgfw_tunnel_protocol_pkt_session_data_t;
 

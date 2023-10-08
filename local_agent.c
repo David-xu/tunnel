@@ -16,11 +16,7 @@ static int local_agent_vacc_host_recv(struct _vacc_host *vacc_host, void *opaque
     fgfw_log("len %d\n", len);
     // fgfw_hexdump(buf, len);
 
-    if ((inst->session_id < 0) || (inst->session_id >= FGFW_TUNNEL_SESSION_MAX)) {
-        fgfw_err("inst idx %d, invalid session id.\n", inst->session_id);
-    } else {
-        local_agent->tunnel->session_send(local_agent->tunnel, inst->session_id, buf, len);
-    }
+    local_agent->tunnel->session_send(local_agent->tunnel, inst->session_id, buf, len);
 
     return 0;
 }
@@ -103,7 +99,7 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
             fgfw_assert(local_agent->tunnel->n_bundle == 1);
             /* new connection, create new tunnel session, client */
             inst->session_id = local_agent->tunnel->session_open(local_agent->tunnel, inst->conn_id, 0,
-                inst->listen_port + local_agent->port_agent_offset, -1);
+                inst->listen_port + local_agent->port_agent_offset);
             if (inst->session_id < 0) {
                 fgfw_err("inst conn_id %d session create faild, ret %d\n", inst->conn_id, inst->session_id);
             } else {
