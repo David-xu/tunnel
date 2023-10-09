@@ -1,5 +1,23 @@
 #include "pub.h"
 
+void fgfw_transport_pool_dump(fgfw_transport_pool_t *transport_pool)
+{
+    fgfw_transport_id transport_id;
+    fgfw_transport_t *transport;
+
+    fgfw_log("transport list:\n");
+    for (transport_id = 0; transport_id < FGFW_MAX_TRANSPORT; transport_id++) {
+        transport = &(transport_pool->_transport_res[transport_id]);
+        if (transport->valid == 0) {
+            continue;
+        }
+        fgfw_log("\tid %d, bundle id %d, send Bps %d\n"
+            "\tsendbuf tail 0x%x head 0x%x, recvbuf tail 0x%x head 0x%x, align_tmp_buf_len %d, aes_128_enable %d\n",
+            transport->transport_id, transport->transport_belongs_to_bundle_id, transport->send_bps,
+            transport->pending_buf_tail, transport->pending_buf_head, transport->recv_buf_tail, transport->recv_buf_head, transport->align_tmp_buf_len, transport->aes_128_enable);
+    }
+}
+
 fgfw_transport_id fgfw_transport_pool_get(fgfw_transport_pool_t *transport_pool)
 {
     fgfw_transport_t *transport;
@@ -10,6 +28,11 @@ fgfw_transport_id fgfw_transport_pool_get(fgfw_transport_pool_t *transport_pool)
 
     transport = transport_pool->free_list[transport_pool->free_head % FGFW_MAX_TRANSPORT];
     transport_pool->free_head++;
+
+    fgfw_assert(transport->valid == 0);
+
+    transport->valid = 1;
+
     return transport->transport_id;
 }
 
@@ -22,6 +45,9 @@ int fgfw_transport_pool_put(fgfw_transport_pool_t *transport_pool, fgfw_transpor
     }
 
     fgfw_assert(transport->transport_id < FGFW_MAX_TRANSPORT);
+    fgfw_assert(transport->valid == 1);
+
+    transport->valid = 0;
 
     transport_pool->free_list[transport_pool->free_tail % FGFW_MAX_TRANSPORT] = transport;
     transport_pool->free_tail++;

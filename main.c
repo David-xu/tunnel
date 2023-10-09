@@ -16,6 +16,7 @@ enum {
     ARGPARAM_TESTBENCH,
     ARGPARAM_TRANSPORT_SEND_BPS,
     ARGPARAM_PORT_AGENT_OFFSET,
+    ARGPARAM_LENGTH,
 };
 
 struct option long_options[]={
@@ -24,6 +25,7 @@ struct option long_options[]={
     {"mode", 1, NULL, ARGPARAM_MODE},
     {"serv_ip", 1, NULL, ARGPARAM_SERV_IP},
     {"port_list", 1, NULL, ARGPARAM_PORT_LIST},
+    {"len", 1, NULL, ARGPARAM_LENGTH},
     {"local_agent_port_list", 1, NULL, ARGPARAM_LOCAL_AGENT_PORT_LIST},
     {"tunnel_default_key", 1, NULL, ARGPARAM_TUNNEL_DEFAULT_KEY},
     {"testbench", 1, NULL, ARGPARAM_TESTBENCH},
@@ -39,9 +41,10 @@ static void tunnel_usage(char* progname)
     printf("     --mode                         --mode=[server/client]\n");
     printf("     --serv_ip                      server ip address\n");
     printf("     --port_list                    tcp port list\n");
+    printf("     --len                          set length\n");
     printf("     --local_agent_port_list        local agent port list\n");
     printf("     --tunnel_default_key           tunnel default aes key\n");
-    printf("     --testbench=[port]             testbench, set tcp port\n");
+    printf("     --testbench=[test work mode]   testbench, set testbench mode\n");
     printf("     --transport_send_bps           send bps(bytes per second)\n");
     printf("     --port_agent_offset            server port = client port + port_agent_offset\n");
 }
@@ -127,11 +130,47 @@ static void set_default_aes_key(running_ctx_t *ctx) {
     strncpy((char *)ctx->default_key, "abcd01234567ef", sizeof(ctx->default_key));
 }
 
-extern int do_testbench(int mode, int port);
+static void cmd_loop(void)
+{
+	char *argv[64];
+	uint32_t len[64];
+
+    char line[1024];
+    int i, total_len, argc;
+    while (g_ctx.running) {
+        printf("cmd:\n");
+        fflush(stdout);
+        memset(line, 0, sizeof(line));
+        fgets(line, sizeof(line), stdin);
+        total_len = strlen(line);
+        line[total_len - 1] = 0;
+        total_len -= 1;
+        argc = fgfw_stdiv(line, total_len, sizeof(len) / sizeof(len[0]), argv, len, 2, " \n", 0);
+        for (i = 0; i < argc; i++) {
+            argv[i][len[i]] = 0;
+            if (memcmp(argv[0], "--dump", 6) == 0) {
+                if (g_ctx.mode == FGFW_WORKMODE_CLIENT) {
+                    fgfw_log("client:\n");
+                    fgfw_local_agent_dump(&(g_ctx.local_agent));
+                    fgfw_tunnel_dump(&(g_ctx.tunnel));
+                } else {
+                    fgfw_log("server:\n");
+                    fgfw_tunnel_dump(&(g_ctx.tunnel));
+                    fgfw_local_agent_dump(&(g_ctx.local_agent));
+                }
+            } else if (memcmp(argv[0], "-q", 2) == 0) {
+                g_ctx.running = 0;
+            }
+        } 
+    }
+}
+
+extern int do_testbench(int mode, int testmode, int port[], uint64_t send_len);
 
 int main(int argc, char *argv[])
 {
-    int cmdtype, longp_idx, i, testbench = 0;
+    int cmdtype, longp_idx, i, testbench = 0, testbench_mode = 0;
+    uint64_t len;
 
     set_default_aes_key(&g_ctx);
 
@@ -180,6 +219,11 @@ int main(int argc, char *argv[])
             g_ctx.n_local_agent_port = n_port;
             break;
         }
+        case ARGPARAM_LENGTH:
+        {
+            len = strtoull(optarg, NULL, 0);
+            break;
+        }
         case ARGPARAM_TUNNEL_DEFAULT_KEY:
         {
             int i, len = strlen(optarg), v, n_valid = 0;
@@ -204,8 +248,8 @@ int main(int argc, char *argv[])
         }
         case ARGPARAM_TESTBENCH:
         {
-            testbench = strtoull(optarg, NULL, 0);
-
+            testbench = 1;
+            testbench_mode = strtoull(optarg, NULL, 0);
             break;
         }
         case ARGPARAM_TRANSPORT_SEND_BPS:
@@ -258,7 +302,12 @@ int main(int argc, char *argv[])
     srand(time(0));
 
     if (testbench) {
-        return do_testbench(g_ctx.mode, testbench);
+        if (g_ctx.n_local_agent_port == 0) {
+            fgfw_log("need set --local_agent_port_list\n");
+            return 0;
+        }
+        
+        return do_testbench(g_ctx.mode, testbench_mode, g_ctx.local_agent_port_list, len);
     }
 
     setup_signal_handling();
@@ -286,7 +335,7 @@ int main(int argc, char *argv[])
 
     g_ctx.running = 1;
     while (g_ctx.running) {
-        usleep(10000);
+        cmd_loop();
     }
 
     fgfw_local_agent_destroy(&(g_ctx.local_agent));

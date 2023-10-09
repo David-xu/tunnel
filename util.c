@@ -225,6 +225,91 @@ void fgfw_aes_decrypt(const unsigned char *key, const unsigned char *input, unsi
     AES_ecb_encrypt(input, output, &aes_key, AES_DECRYPT);
 }
 
+#define STDIVCTRL_EMPTYSUBSTR  1
+
+int fgfw_stdiv
+(
+	char *buf,			/* input */
+	int buflen,			/* input */
+	int n_argv,			/* input: sizeof argv */
+	char *argv[],		/* output */
+	uint32_t len[],		/* output */
+	int n_divflag,		/* input */
+	char *divflag,		/* input */
+	uint32_t ctrl		/* input */
+)
+{
+	int i, j, ret = 0, state = 0;		/* 0: begin, 1: not div char 2: div char */
+
+	for (i = 0; i < n_argv; i++)
+	{
+		argv[i] = NULL;
+		len[i] = 0;
+	}
+
+	for (i = 0; i < buflen;)
+	{
+		for (j = 0; j < n_divflag; j++)
+		{
+			if (buf[i] == divflag[j])
+			{
+				/* ok, we find one div charactor */
+
+				switch (state)
+				{
+				case 0:
+				case 1:
+					state = 2;
+					break;
+				case 2:
+					if (ctrl & STDIVCTRL_EMPTYSUBSTR)
+					{
+						/* need to save this empty flag */
+
+						if (ret == n_argv)
+							return ret;
+
+						ret++;
+					}
+					break;
+				default:
+                    break;
+				}
+
+				goto stdiv_nextch;
+			}
+		}
+
+		/* reach here, the buf[i] is NOT the div charactor */
+		switch (state)
+		{
+		case 0:
+		case 2:
+			if (ret == n_argv)
+				return ret;
+
+			argv[ret] = &(buf[i]);
+			len[ret] = 1;
+			ret++;
+
+			state = 1;
+
+			break;
+		case 1:
+			(len[ret - 1])++;
+			break;
+		default:
+            break;
+		}
+
+stdiv_nextch:
+
+        i++;
+	}
+
+    return ret;
+}
+
 void fgfw_hexdump(const void *buf, uint32_t len)
 {
     const uint32_t line_w = 16;
@@ -516,18 +601,18 @@ _finish:
     mngr->free += size;
 }
 
-void fgfw_range_res_dump(fgfw_range_res_t *mngr)
+void fgfw_range_res_dump(fgfw_range_res_t *mngr, const char *prefix)
 {
     uint32_t i = 0;
     fgfw_range_res_node_t *p;
 
     FGFW_LISTENTRYWALK(p, &(mngr->freelist), node) {
-        fgfw_log("[0x%016lx, 0x%016lx)\n", p->base, p->base + p->size);
+        fgfw_log("%s[0x%016lx, 0x%016lx)\n", prefix, p->base, p->base + p->size);
         i++;
     }
 
-    fgfw_log("mngr->base 0x%016lx, mngr->size 0x%016lx, mngr->putget_cnt %d, mngr->n_node %d, i %d\n",
-        mngr->base, mngr->base + mngr->size, mngr->putget_cnt, mngr->n_node, i);
+    fgfw_log("%smngr->base 0x%016lx, mngr->size 0x%016lx, mngr->putget_cnt %d, mngr->n_node %d, i %d\n",
+        prefix, mngr->base, mngr->base + mngr->size, mngr->putget_cnt, mngr->n_node, i);
     if (i != mngr->n_node) {
         fgfw_err("mngr->node %d != i %d\n", mngr->n_node, i);
     }

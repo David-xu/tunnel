@@ -124,6 +124,18 @@ static inline int fgfw_c2n(char c)
     }
 }
 
+
+int fgfw_stdiv
+(
+	char *buf,			/* input */
+	int buflen,			/* input */
+	int n_argv,			/* input: sizeof argv */
+	char *argv[],		/* output */
+	uint32_t len[],		/* output */
+	int n_divflag,		/* input */
+	char *divflag,		/* input */
+	uint32_t ctrl		/* input */
+);
 void fgfw_hexdump(const void *buf, uint32_t len);
 
 typedef struct {
@@ -180,7 +192,7 @@ int fgfw_range_res_uninit(fgfw_range_res_t *mngr);
 uint64_t fgfw_range_res_alloc(fgfw_range_res_t *mngr, uint64_t size);
 int fgfw_range_res_alloc_specified(fgfw_range_res_t *mngr, uint64_t base, uint64_t *size);
 void fgfw_range_res_free(fgfw_range_res_t *mngr, uint64_t base, uint64_t size);
-void fgfw_range_res_dump(fgfw_range_res_t *mngr);
+void fgfw_range_res_dump(fgfw_range_res_t *mngr, const char *prefix);
 int fgfw_range_res_merge(fgfw_range_res_t *mngr, uint64_t base[2], uint64_t num[2], uint32_t dir);
 
 #endif

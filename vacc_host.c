@@ -311,6 +311,9 @@ retry:
     }
 
     if (ret < 0) {
+        if ((errno == ECONNRESET) || (errno == EPIPE)) {
+            return VACC_HOST_RET_PEERCLOSE;
+        }
         printf("##############  sendmsg() return faild, ret %d, errno %d\n", ret, errno);
         return VACC_HOST_RET_SENDMSG_FAILD;
     }
@@ -377,7 +380,7 @@ __retry_recv_head:
         if ((errno == EINTR) || (errno == EAGAIN)) {
             usleep(100);
             goto __retry_recv_head;
-        } else if (errno == ECONNRESET) {
+        } else if ((errno == ECONNRESET) || (errno == EPIPE)) {
             // printf("**********   exit   02\n");
             /* peer close, just return 0 */
             return VACC_HOST_RET_PEERCLOSE;

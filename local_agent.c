@@ -1,5 +1,37 @@
 #include "pub.h"
 
+void fgfw_local_agent_dump(fgfw_local_agent_t *local_agent)
+{
+    uint32_t i;
+    fgfw_local_agent_conn_t *agent_conn;
+    fgfw_log("agent conn list:\n");
+    for (i = 0; i < FGFW_LOCAL_AGENT_MAX_CONN; i++) {
+        agent_conn = &(local_agent->local_conn_pool[i]);
+        if (agent_conn->valid == 0) {
+            continue;
+        }
+
+        fgfw_log("conn id[%d]: session_id %d\n", agent_conn->conn_id, agent_conn->session_id);
+        switch (agent_conn->vacc_host.insttype) {
+        case VACC_HOST_INSTTYPE_SERVER_LISTENER:
+            fgfw_log("\t\tlistener\n");
+            break;
+        case VACC_HOST_INSTTYPE_SERVER_INST:
+            fgfw_log("\t\tserver inst <-- | listen port %d\n", agent_conn->listen_port);
+            break;
+        case VACC_HOST_INSTTYPE_CLIENT_INST:
+            fgfw_log("\t\tclient inst --> | connect port %d\n", agent_conn->connect_port);
+            break;
+        default:
+            fgfw_assert(0);
+        }
+    }
+}
+
+int fgfw_local_agent_bundle_id_valid(fgfw_local_agent_conn_id agent_conn_id) {
+    return ((agent_conn_id >= 0) && (agent_conn_id < FGFW_LOCAL_AGENT_MAX_CONN));
+}
+
 static void local_agent_conn_cb(fgfw_epoll_inst_t *epoll_inst)
 {
     fgfw_local_agent_conn_t *inst = FGFW_GETCONTAINER(epoll_inst, fgfw_local_agent_conn_t, epoll_inst);
@@ -131,6 +163,8 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
     fgfw_listadd_tail(&(inst->node), &(local_agent->active_local_conn));
     local_agent->n_active_local_conn++;
 
+    inst->valid = 1;
+
     return 0;
 }
 
@@ -170,15 +204,15 @@ static int local_agent_vacc_host_uninit(struct _vacc_host *vacc_host, void *opaq
     }
 
     /* destroy tunnel session */
-    if (inst->session_id < 0) {
-        fgfw_log("inst conn_id %d, session_id invalid %d\n", inst->conn_id);
-    } else {
+    if (fgfw_tunnel_session_id_valid(local_agent->mode, inst->session_id)) {
         int ret;
-        ret = local_agent->tunnel->session_close(local_agent->tunnel, inst->session_id);
+        ret = local_agent->tunnel->session_close(local_agent->tunnel, inst->session_id, 1);
         if (ret < 0) {
             fgfw_err("inst conn_id %d, session close return %d\n", inst->conn_id, ret);
         }
     }
+
+    inst->valid = 0;
 
     /* remove from epoll thread mngr */
     fgfw_epoll_thread_reg_uninst(&(local_agent->epoll_thread), &(inst->epoll_inst));
@@ -233,7 +267,8 @@ static fgfw_local_agent_conn_id local_agent_conn_open(fgfw_local_agent_t *local_
     }
 
     inst->session_id = session_id;
-    fgfw_log("local agent conn ok, dest port %d, session id %d\n", port, session_id);
+    inst->connect_port = port;
+    fgfw_log("local agent conn[%d] ok, dest port %d, session id %d\n", inst->conn_id, port, session_id);
 
     return inst->conn_id;
 }
@@ -293,8 +328,11 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, int port_
 
     /* init free conn pool */
     for (i = 0; i < FGFW_LOCAL_AGENT_MAX_CONN; i++) {
+        local_agent->local_conn_pool[i].valid = 0;
         local_agent->local_conn_pool[i].conn_id = i;
         local_agent->local_conn_pool[i].local_agent = local_agent;
+        local_agent->local_conn_pool[i].session_id = FGFW_TUNNEL_SESSION_ID_INVALID;
+        
         local_agent->free_local_conn[i] = &(local_agent->local_conn_pool[i]);
     }
     local_agent->free_local_conn_tail = FGFW_LOCAL_AGENT_MAX_CONN;

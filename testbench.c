@@ -289,13 +289,14 @@ static int testbench_server(int port)
     return 0;
 }
 
-static int testbench_client(int port)
+static int testbench_client(int port, uint64_t send_len)
 {
     testbench_ctx_t tb_ctx;
     vacc_host_create_param_t param;
     vacc_host_t *cli;
     int ret, len, i;
     static uint16_t cnt = 0;
+    uint64_t left_len = send_len;
 
     memset(&tb_ctx, 0, sizeof(testbench_ctx_t));
 
@@ -333,9 +334,12 @@ static int testbench_client(int port)
         tb_ctx.sendbuf[i] = i;
     }
 
-    while (1) {
+    while (left_len) {
         testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)tb_ctx.sendbuf;
         len = rand() % (sizeof(tb_ctx.sendbuf) - 1024);
+        if ((uint64_t)len > left_len) {
+            len = left_len;
+        }
         pkt_head->magic = TESTBENCH_PKT_MAGIC;
         pkt_head->cnt = cnt;
         pkt_head->payload_len = len;
@@ -354,6 +358,7 @@ static int testbench_client(int port)
         while (g_stop) {
             usleep(100000);
         }
+        left_len -= len;
     }
 
     while (1) {
@@ -363,12 +368,12 @@ static int testbench_client(int port)
     return 0;
 }
 
-int do_testbench(int mode, int port)
+int do_testbench(int mode, int testmode, int port[], uint64_t send_len)
 {
     if (mode == FGFW_WORKMODE_SERVER) {
-        testbench_server(port);
+        testbench_server(port[0]);
     } else if (mode == FGFW_WORKMODE_CLIENT) {
-        testbench_client(port);
+        testbench_client(port[0], send_len);
     }
 
     return 0;

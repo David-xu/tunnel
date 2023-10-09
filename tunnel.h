@@ -30,7 +30,21 @@ typedef enum {
     FGFW_TUNNEL_SESSION_STATE_CREATE_FAILD,
     FGFW_TUNNEL_SESSION_STATE_READY,                        /* can send data */
     FGFW_TUNNEL_SESSION_STATE_DELETING,                     /* wait for ack */
+    FGFW_TUNNEL_SESSION_STATE_COUNT,
 } fgfw_tunnel_session_state_e;
+
+static inline const char *fgfw_tunnel_session_state_desc(fgfw_tunnel_session_state_e state) {
+    const char *desc[FGFW_TUNNEL_SESSION_STATE_COUNT] = {
+        "FGFW_TUNNEL_SESSION_STATE_FREE",
+        "FGFW_TUNNEL_SESSION_STATE_INIT",
+        "FGFW_TUNNEL_SESSION_STATE_CREATING",
+        "FGFW_TUNNEL_SESSION_STATE_CREATE_FAILD",
+        "FGFW_TUNNEL_SESSION_STATE_READY",
+        "FGFW_TUNNEL_SESSION_STATE_DELETING",
+    };
+
+    return desc[state];
+}
 
 typedef struct _fgfw_tunnel_session {
     struct _fgfw_tunnel                     *tunnel;
@@ -89,7 +103,7 @@ typedef struct _fgfw_tunnel {
     /*
      *
      */
-    int (*session_close)(struct _fgfw_tunnel *tunnel, fgfw_tunnel_session_id session_id);
+    int (*session_close)(struct _fgfw_tunnel *tunnel, fgfw_tunnel_session_id session_id, int peer_close);
     /*
      */
     int (*session_send)(struct _fgfw_tunnel *tunnel, fgfw_tunnel_session_id session_id, void *buf, int len);
@@ -103,6 +117,10 @@ typedef struct _fgfw_tunnel {
     uint32_t                    transport_send_bps;
 } fgfw_tunnel_t;
 
+void fgfw_tunnel_dump(fgfw_tunnel_t *tunnel);
+int fgfw_tunnel_bundle_id_valid(fgfw_tunnel_bundle_id bundle_id);
+int fgfw_tunnel_session_id_valid(int mode, fgfw_tunnel_session_id session_id);
+
 fgfw_tunnel_bundle_id fgfw_tunnel_bundle_find(fgfw_tunnel_t *tunnel, char *ipstr_at_cli, char *ipstr_at_srv, uint32_t pid_at_cli);
 fgfw_tunnel_bundle_id fgfw_tunnel_bundle_new(fgfw_tunnel_t *tunnel, char *ipstr_at_cli, char *ipstr_at_srv, uint32_t pid_at_cli);
 void fgfw_tunnel_bundle_del(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id);
@@ -111,8 +129,6 @@ int fgfw_tunnel_bundle_insert_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundl
 int fgfw_tunnel_bundle_remove_transport(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id, fgfw_transport_id transport_id);
 fgfw_transport_id fgfw_tunnel_bundle_get_transport_id(fgfw_tunnel_t *tunnel, fgfw_tunnel_bundle_id bundle_id);
 fgfw_tunnel_bundle_id fgfw_tunnel_find_bundle_by_transport(fgfw_tunnel_t *tunnel, fgfw_transport_id transport_id);
-
-int fgfw_tunnel_session_id_valid(int mode, fgfw_tunnel_session_id session_id);
 
 int fgfw_tunnel_create(fgfw_tunnel_t *tunnel, int mode, uint32_t transport_send_bps, char *serv_ip, int n_port, int port_list[], uint8_t default_key[]);
 int fgfw_tunnel_destroy(fgfw_tunnel_t *tunnel);
@@ -124,8 +140,8 @@ int tunnel_proc_send_req_bundle_join(fgfw_tunnel_t *tunnel, fgfw_transport_t *tr
 int tunnel_proc_send_resp_bundle_join(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, uint32_t bundle_id);
 int tunnel_proc_send_req_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t port, fgfw_tunnel_session_id src_session_id, uint32_t *create_challenge);
 int tunnel_proc_send_resp_session_new(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, fgfw_tunnel_session_id src_session_id, fgfw_tunnel_session_id dst_session_id);
-int tunnel_proc_send_req_session_del(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, fgfw_tunnel_session_id src_session_id, fgfw_tunnel_session_id dst_session_id, uint32_t *destroy_challenge);
-int tunnel_proc_send_resp_session_del(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, uint32_t session_key);
+int tunnel_proc_send_req_session_del(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, fgfw_tunnel_session_id src_session_id, fgfw_tunnel_session_id dst_session_id);
+int tunnel_proc_send_resp_session_del(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport, uint32_t challenge, int ret, fgfw_tunnel_session_id dst_session_id);
 
 /*  */
 int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *transport);

@@ -69,12 +69,13 @@ typedef struct {
     uint32_t        dst_session_id;                         /*  */
 } fgfw_tunnel_protocol_pkt_session_del_req_t;
 
+#if 0
 typedef struct {
     uint32_t        magic;
     int             ret;
-    uint32_t        src_session_id;                         /*  */
     uint32_t        dst_session_id;                         /*  */
 } fgfw_tunnel_protocol_pkt_session_del_resp_t;
+#endif
 
 typedef struct {
     uint32_t        src_session_id;

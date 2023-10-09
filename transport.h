@@ -12,8 +12,9 @@
 #define FGFW_TRANSPORT_DEFAULT_SEND_BPS     (10000)
 
 typedef struct _fgfw_transport {
+    int                         valid;
     fgfw_transport_id           transport_id;
-    int                         transport_belongs_to_bundle_id; /* which bundle this transport belongs to, FGFW_BUNDLE_ID_INVALID if not belongs to any bundle */
+    fgfw_tunnel_bundle_id       transport_belongs_to_bundle_id; /* which bundle this transport belongs to, FGFW_BUNDLE_ID_INVALID if not belongs to any bundle */
 
     pthread_mutex_t             transport_op_big_lock;
 
@@ -76,6 +77,8 @@ static inline void fgfw_transport_pool_init(fgfw_transport_pool_t *transport_poo
     transport_pool->free_tail = FGFW_MAX_TRANSPORT;
     transport_pool->free_head = 0;
 }
+
+void fgfw_transport_pool_dump(fgfw_transport_pool_t *transport_pool);
 
 /* return:  */
 fgfw_transport_id fgfw_transport_pool_get(fgfw_transport_pool_t *transport_pool);

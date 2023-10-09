@@ -27,5 +27,5 @@ a)协商密钥
 ./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001 --transport_send_bps=10000
 
 # 测试
-./fgfw --testbench=30000 --mode=server
-./fgfw --testbench=30000 --mode=client
+./fgfw --testbench=0 --mode=server --local_agent_port_list=30000
+./fgfw --testbench=0 --mode=client --local_agent_port_list=30000 --len=10000000
