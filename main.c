@@ -4,7 +4,11 @@ char * const short_options="hv";
 
 static running_ctx_t g_ctx = {0};
 
+#if 0
 uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
+#else
+uint64_t g_dbgprint_flag = 0;
+#endif
 
 enum {
     ARGPARAM_BEGIN = 256,

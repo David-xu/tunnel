@@ -215,11 +215,6 @@ static int fgfw_tunnel_session_close(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_
         tunnel_proc_send_req_session_del(tunnel, transport, session->local_session_id, session->remote_session_id);
     }
 
-    /* close agent conn */
-    if (fgfw_local_agent_bundle_id_valid(session->agent_conn_id)) {
-        tunnel->local_agent->local_conn_close(tunnel->local_agent, session->agent_conn_id);
-    }
-
     //
     fgfw_range_res_uninit(&(session->recv_range));
 
@@ -670,6 +665,8 @@ static int tunnel_transport_init(struct _vacc_host *vacc_host, void *opaque)
         }
 
         fgfw_tunnel_bundle_insert_transport(tunnel, 0, transport->transport_id);
+
+        transport->transport_belongs_to_bundle_id = 0;
     }
 
     return 0;
@@ -1215,11 +1212,23 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
     {
         uint32_t offset;
         fgfw_tunnel_protocol_pkt_session_del_req_t *session_del_req;
+        fgfw_tunnel_session_t *session;
 
         offset = transport->recv_buf_head + sizeof(fgfw_tunnel_protocol_pkt_head_t);
         session_del_req = (fgfw_tunnel_protocol_pkt_session_del_req_t *)&(transport->recv_buf[offset % FGFW_TRANSPORT_RECVBUF_SIZE]);
         /* no need to send session close to peer */
         tunnel->session_close(tunnel, session_del_req->dst_session_id, 0);
+
+        if (fgfw_tunnel_session_id_valid(tunnel->mode, session_del_req->dst_session_id)) {
+            session = fgfw_tunnel_get_session(tunnel, session_del_req->dst_session_id);
+            /* close agent conn */
+            if (fgfw_local_agent_bundle_id_valid(session->agent_conn_id)) {
+                tunnel->local_agent->local_conn_close(tunnel->local_agent, session->agent_conn_id);
+            }
+        }
+
+        /* pkt already comsumed */
+        transport->recv_buf_head += pkt_head->align_len;
 
         break;
     }
