@@ -1367,7 +1367,7 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
         } else {
             if (dst_session->session_state != FGFW_TUNNEL_SESSION_STATE_READY) {
                 /* session not exist, just drop */
-                fgfw_log("session [%d] state , drop pkt len %d\n",
+                fgfw_log("session [%d] state %s, drop pkt len %d\n",
                     dst_session->local_session_id, fgfw_tunnel_session_state_desc(dst_session->session_state), first_len + second_len);
 
                 transport->recv_buf_head += pkt_head->align_len;

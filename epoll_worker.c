@@ -72,12 +72,14 @@ static int epoll_sub_crthread_func(crthread_tcb_t *tcb, void *p)
                 if (FGFW_RAW_BITMAP_TEST(sub_crthread->pending_bm, i)) {
                     epoll_inst = sub_crthread->pending_inst[i];
 
-                    /* clean pending state first, epoll_inst->epoll_inst_cb() may switch */
-                    sub_crthread->pending_inst[i] = NULL;
-                    FGFW_RAW_BITMAP_CLEAR(sub_crthread->pending_bm, i);
-                    sub_crthread->n_pending--;
-
                     epoll_inst->epoll_inst_cb(epoll_inst);
+
+                    /* check again, epoll_inst->epoll_inst_cb() may switch */
+                    if (FGFW_RAW_BITMAP_TEST(sub_crthread->pending_bm, i)) {
+                        sub_crthread->pending_inst[i] = NULL;
+                        FGFW_RAW_BITMAP_CLEAR(sub_crthread->pending_bm, i);
+                        sub_crthread->n_pending--;                        
+                    }
 
                     cnt++;
                 }

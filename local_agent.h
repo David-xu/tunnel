@@ -1,7 +1,7 @@
 #ifndef _LOCAL_AGENT_H_
 #define _LOCAL_AGENT_H_
 
-#define FGFW_LOCAL_AGENT_MAX_CONN           256
+#define FGFW_LOCAL_AGENT_MAX_CONN           4096
 
 struct _fgfw_local_agent;
 typedef struct {

@@ -22,9 +22,9 @@ a)协商密钥
 
 
 # client模式
-./fgfw --mode=client --serv_ip=127.0.0.1 --port_list=40000,40001 --transport_send_bps=10000 --local_agent_port_list=3000 --port_agent_offset=1
+./fgfw --mode=client --serv_ip=127.0.0.1 --port_list=40000,40001,50002,50003 --transport_send_bps=100000 --local_agent_port_list=3000 --port_agent_offset=1
 # server模式
-./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001 --transport_send_bps=10000
+./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001,50002,50003 --transport_send_bps=100000
 
 # 测试
 ./fgfw --testbench=0 --mode=server --local_agent_port_list=3000

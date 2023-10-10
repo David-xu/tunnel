@@ -7,7 +7,7 @@
 // #define FGFW_PENDING_BUFSIZE                (1 * 1024 * 1024)
 #define FGFW_PENDING_BUFSIZE                (16 * 1024)
 // #define FGFW_TRANSPORT_RECVBUF_SIZE         (1 * 1024 * 1024)
-#define FGFW_TRANSPORT_RECVBUF_SIZE         (64 * 1024)
+#define FGFW_TRANSPORT_RECVBUF_SIZE         (128 * 1024)
 #define FGFW_TRANSPORT_MAX_SEND_LEN         (1024)
 #define FGFW_TRANSPORT_DEFAULT_SEND_BPS     (10000)
 
