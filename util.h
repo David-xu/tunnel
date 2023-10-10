@@ -170,6 +170,29 @@ static inline int single_token_bucket_consume(single_token_bucket_t *stb, int n_
     return n_token;
 }
 
+#define IOHUB_BITMAP_MAGIC              0x4d544942
+#define IOHUB_BITMAP_NAME_MAXLEN        32
+typedef struct {
+    uint32_t        magic, id_base;
+    uint32_t        n_total, n_free;
+    uint32_t        pad[4];
+    char            name[IOHUB_BITMAP_NAME_MAXLEN];
+    uint64_t        bm[0];              /* 1: free, 0: occupied */
+} fgfw_bitmap_t;
+
+#define FGFW_BITMAP_BMARRAY_SIZE(bm)            (((bm)->n_total + 63) / 64)
+
+int fgfw_bitmap_init_ex(fgfw_bitmap_t *bm, const char *name, uint32_t n_total, uint32_t id_base, int clear);
+#define iohub_bitmap_init(bm, name, n_total, id_base)   iohub_bitmap_init_ex(bm, name, n_total, id_base, 0)
+int fgfw_bitmap_alloc(fgfw_bitmap_t *bm, uint32_t n, uint32_t *res);
+int fgfw_bitmap_alloc_specified(fgfw_bitmap_t *bm, uint32_t specified_id);
+int fgfw_bitmap_free(fgfw_bitmap_t *bm, uint32_t n, uint32_t *ids);
+int fgfw_bitmap_query_specified(fgfw_bitmap_t *bm, uint32_t specified_id);
+
+#define FGFW_RAW_BITMAP_SET(bm, idx)            do {((uint32_t *)bm)[(idx) / 32] |= 0x1ULL << ((idx) % 32);} while (0)
+#define FGFW_RAW_BITMAP_CLEAR(bm, idx)          do {((uint32_t *)bm)[(idx) / 32] &= ~(0x1ULL << ((idx) % 32));} while (0)
+#define FGFW_RAW_BITMAP_TEST(bm, idx)           (((uint32_t *)bm)[(idx) / 32] & (0x1ULL << ((idx) % 32)))
+
 typedef struct {
     fgfw_listhead_t         node;
     uint64_t                base;

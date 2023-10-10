@@ -1,6 +1,8 @@
 #ifndef _EPOLL_WORKER_H_
 #define _EPOLL_WORKER_H_
 
+#define FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD              (2 * 1024)
+
 struct _fgfw_epoll_thread;
 
 typedef struct _fgfw_epoll_inst {
@@ -8,6 +10,10 @@ typedef struct _fgfw_epoll_inst {
     struct _fgfw_epoll_thread *epoll_thread;
     fgfw_listhead_t node;
     uint32_t reg_events;
+    int sub_crthread_id;                /* -1: process in main crthread */
+    uint32_t idx_in_sub_crthread;       /* pending list idx in fgfw_epoll_thread_sub_crthread_t */
+    
+    crthread_tcb_t *tcb;
 
     /* set by user */
     void (*epoll_inst_cb)(struct _fgfw_epoll_inst *epoll_inst);
@@ -15,6 +21,7 @@ typedef struct _fgfw_epoll_inst {
 } fgfw_epoll_inst_t;
 
 #define FGFW_TIMERFW_MAXTIMER               64
+#define FGFW_EPOLL_THREAD_MAXSUBCRTHREAD    8
 
 typedef int (*fgfw_timerfw_cb_func)(void *param);
 
@@ -27,11 +34,29 @@ typedef struct {
     void                    *cb_param;
 } fgfw_timerfw_timer_t;
 
+struct _fgfw_epoll_thread;
+typedef struct _fgfw_epoll_thread_sub_crthread {
+    struct _fgfw_epoll_thread       *epoll_thread;
+    int                             idx;
+    crthread_tcb_t                  *crthread_tcb;
+    crthread_semaphore_t            sem;
+    fgfw_bitmap_t                   bm;
+    uint64_t                        bm_space[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD / 64];
+
+    volatile uint32_t               n_pending;
+    uint64_t                        pending_bm[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD / 64];
+    fgfw_epoll_inst_t               *pending_inst[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD];
+} fgfw_epoll_thread_sub_crthread_t;
+
 typedef struct _fgfw_epoll_thread {
     int epoll_fd;
     pthread_t t;
 
-    volatile int running;
+    volatile int shutdown;
+
+    crthread_scheduler_t    crthread_ctx;
+    crthread_tcb_t          *main_crthread;
+    fgfw_epoll_thread_sub_crthread_t    sub_crthread[FGFW_EPOLL_THREAD_MAXSUBCRTHREAD];
 
     int n_inst;
     fgfw_listhead_t inst_list_head;
@@ -45,7 +70,7 @@ int fgfw_epoll_thread_destroy(fgfw_epoll_thread_t *epoll_thread);
 /*
  *  epoll_inst need init first, epoll_inst->fd, epoll
  */
-int fgfw_epoll_thread_reg_inst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst);
+int fgfw_epoll_thread_reg_inst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst, int sub_crthread_id);
 int fgfw_epoll_thread_reg_uninst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_inst_t *epoll_inst);
 
 /*

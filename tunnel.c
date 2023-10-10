@@ -167,7 +167,8 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
         
         /* 2. wait for ack */
         while (new_session->session_state == FGFW_TUNNEL_SESSION_STATE_CREATING) {
-            usleep(1000);
+            // usleep(1000);
+            crthread_usleep(tunnel->epoll_thread.crthread_ctx.cur, 1000);
         }
     } else {
         /* server, session create no need to send any pkt */
@@ -189,6 +190,8 @@ static fgfw_tunnel_session_id fgfw_tunnel_session_open(fgfw_tunnel_t *tunnel, fg
         fgfw_listadd_tail(&(new_session->node), &(tunnel->active_session_list));
         tunnel->n_active_session++;
 
+        fgfw_log("session 0x%x opened.\n", new_session->local_session_id);
+
         return new_session->local_session_id;
     }
 }
@@ -198,7 +201,7 @@ static int fgfw_tunnel_session_close(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_
     fgfw_tunnel_session_t *session = fgfw_tunnel_get_session(tunnel, session_id);
     
     if (session->session_state == FGFW_TUNNEL_SESSION_STATE_FREE) {
-        fgfw_warn("session id %d, already freed\n", session_id);
+        fgfw_warn("session id 0x%x, already freed\n", session_id);
         return FGFW_RETVALUE_OK;
     }
 
@@ -228,6 +231,8 @@ static int fgfw_tunnel_session_close(fgfw_tunnel_t *tunnel, fgfw_tunnel_session_
     tunnel->free_session_list[tunnel->free_session_tail % FGFW_TUNNEL_SESSION_MAX] = session;
     tunnel->free_session_tail++;
     fgfw_assert((tunnel->free_session_tail - tunnel->free_session_head) <= FGFW_TUNNEL_SESSION_MAX);
+
+    fgfw_log("session 0x%x closed.\n", session->local_session_id);
 
     return FGFW_RETVALUE_OK;
 }
@@ -287,8 +292,8 @@ __retry_send:
         /* do send */
         ret = fgfw_transport_send(transport, sendbuf, pkt_head->align_len);
         if (ret) {
-            fgfw_warn("send faild ret %d, wait 1s to retry.\n", ret);
-            usleep(1000000);
+            fgfw_dbg(FGFW_DBGFLAG_SESSION, "send faild ret %d, wait 1s to retry.\n", ret);
+            crthread_usleep(tunnel->epoll_thread.crthread_ctx.cur, 1000);
             goto __retry_send;
         }
 
@@ -645,7 +650,7 @@ static int tunnel_transport_init(struct _vacc_host *vacc_host, void *opaque)
     /* reg into epoll thread mngr */
     transport->epoll_inst.fd = vacc_host->sock_fd;
     transport->epoll_inst.epoll_inst_cb = tunnel_transport_conn_cb;
-    fgfw_epoll_thread_reg_inst(&(tunnel->epoll_thread), &(transport->epoll_inst));
+    fgfw_epoll_thread_reg_inst(&(tunnel->epoll_thread), &(transport->epoll_inst), 1);
 
     /* add into active list */
     fgfw_listadd_tail(&(transport->node), &(tunnel->active_transport_list));
@@ -1360,12 +1365,20 @@ int tunnel_transport_proc_one_pkt(fgfw_tunnel_t *tunnel, fgfw_transport_t *trans
                 transport->transport_id, session_data_head->src_session_id, dst_session->remote_session_id);
             fgfw_assert(0);
         } else {
-            ret = tunnel->session_recv(tunnel, session_data_head->dst_session_id, session_data_head->session_offset, buf_fitst, first_len, buf_second, second_len);
-            if (ret == FGFW_RETVALUE_OK) {
+            if (dst_session->session_state != FGFW_TUNNEL_SESSION_STATE_READY) {
+                /* session not exist, just drop */
+                fgfw_log("session [%d] state , drop pkt len %d\n",
+                    dst_session->local_session_id, fgfw_tunnel_session_state_desc(dst_session->session_state), first_len + second_len);
+
                 transport->recv_buf_head += pkt_head->align_len;
             } else {
-                /* todo: */
-                fgfw_assert(0);
+                ret = tunnel->session_recv(tunnel, session_data_head->dst_session_id, session_data_head->session_offset, buf_fitst, first_len, buf_second, second_len);
+                if (ret == FGFW_RETVALUE_OK) {
+                    transport->recv_buf_head += pkt_head->align_len;
+                } else {
+                    /* todo: */
+                    fgfw_assert(0);
+                }
             }
         }
 

@@ -111,7 +111,7 @@ static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
 
     inst->epoll_inst.epoll_inst_cb = testbench_epoll_inst_cb;
     inst->epoll_inst.fd = vacc_host->sock_fd;
-    fgfw_epoll_thread_reg_inst(&(tb_ctx->epoll_thread), &(inst->epoll_inst));
+    fgfw_epoll_thread_reg_inst(&(tb_ctx->epoll_thread), &(inst->epoll_inst), 0);
 
     return 0;
 }
@@ -238,17 +238,17 @@ static int test_proto_get_payload_len(void *buf)
     testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
     return head->payload_len;
 }
+static testbench_ctx_t g_tb_ctx;
 
 static int testbench_server(int port)
 {
-    testbench_ctx_t tb_ctx;
     vacc_host_create_param_t param;
     vacc_host_t *listen;
     int ret;
 
-    memset(&tb_ctx, 0, sizeof(testbench_ctx_t));
+    memset(&g_tb_ctx, 0, sizeof(testbench_ctx_t));
 
-    fgfw_epoll_thread_create(&(tb_ctx.epoll_thread));
+    fgfw_epoll_thread_create(&(g_tb_ctx.epoll_thread));
 
     memset(&param, 0, sizeof(param));
     param.transtype = VACC_HOST_TRANSTYPE_TCP;
@@ -271,11 +271,11 @@ static int testbench_server(int port)
     param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
     param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
 #endif
-    param.opaque = &tb_ctx;
+    param.opaque = &g_tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
 
-    listen = testbench_get(NULL, &tb_ctx);
+    listen = testbench_get(NULL, &g_tb_ctx);
     ret = vacc_host_create(listen, &param);
     if (ret != VACC_HOST_RET_OK) {
         fgfw_err("vacc_host_create() return %d\n", ret);
@@ -291,16 +291,15 @@ static int testbench_server(int port)
 
 static int testbench_client(int port, uint64_t send_len)
 {
-    testbench_ctx_t tb_ctx;
     vacc_host_create_param_t param;
     vacc_host_t *cli;
     int ret, len, i;
     static uint16_t cnt = 0;
     uint64_t left_len = send_len;
 
-    memset(&tb_ctx, 0, sizeof(testbench_ctx_t));
+    memset(&g_tb_ctx, 0, sizeof(testbench_ctx_t));
 
-    fgfw_epoll_thread_create(&(tb_ctx.epoll_thread));
+    fgfw_epoll_thread_create(&(g_tb_ctx.epoll_thread));
 
     memset(&param, 0, sizeof(param));
     param.transtype = VACC_HOST_TRANSTYPE_TCP;
@@ -318,11 +317,11 @@ static int testbench_client(int port, uint64_t send_len)
     param.sendbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
     param.recvbuf_size = FGFW_CONFIG_SOCKBUFSIZE;
 #endif
-    param.opaque = &tb_ctx;
+    param.opaque = &g_tb_ctx;
     strncpy(param.u.tcp.srv_ip, "127.0.0.1", sizeof(param.u.tcp.srv_ip));
     param.u.tcp.srv_port = port;
 
-    cli = testbench_get(NULL, &tb_ctx);
+    cli = testbench_get(NULL, &g_tb_ctx);
     ret = vacc_host_create(cli, &param);
     if (ret != VACC_HOST_RET_OK) {
         fgfw_err("vacc_host_create() return %d\n", ret);
@@ -331,12 +330,12 @@ static int testbench_client(int port, uint64_t send_len)
 
     for (i = 0; i < TESTBENCH_PKT_MAXLEN; i++) {
         // sendbuf[i] = (uint8_t)rand();
-        tb_ctx.sendbuf[i] = i;
+        g_tb_ctx.sendbuf[i] = i;
     }
 
     while (left_len) {
-        testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)tb_ctx.sendbuf;
-        len = rand() % (sizeof(tb_ctx.sendbuf) - 1024);
+        testbench_pkt_head_t *pkt_head = (testbench_pkt_head_t *)g_tb_ctx.sendbuf;
+        len = rand() % (sizeof(g_tb_ctx.sendbuf) - 1024);
         if ((uint64_t)len > left_len) {
             len = left_len;
         }
@@ -347,7 +346,7 @@ static int testbench_client(int port, uint64_t send_len)
 
         g_payload_len_log[cnt] = pkt_head->payload_len;
 
-        if (vacc_host_write(cli, tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
+        if (vacc_host_write(cli, g_tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
             fgfw_log("cnt %d, len %d\n", cnt, len);
 
             cnt++;

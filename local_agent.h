@@ -19,7 +19,6 @@ typedef struct {
 
 /* this is used for connect to local */
 typedef struct _fgfw_local_agent {
-    fgfw_epoll_thread_t     epoll_thread;
     fgfw_tunnel_t           *tunnel;
 
     int                     mode;           /* FGFW_WORKMODE_SERVER / FGFW_WORKMODE_CLIENT */

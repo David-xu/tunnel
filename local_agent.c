@@ -157,7 +157,7 @@ static int local_agent_vacc_host_init(struct _vacc_host *vacc_host, void *opaque
     /* reg into epoll thread mngr */
     inst->epoll_inst.fd = vacc_host->sock_fd;
     inst->epoll_inst.epoll_inst_cb = local_agent_conn_cb;
-    fgfw_epoll_thread_reg_inst(&(local_agent->epoll_thread), &(inst->epoll_inst));
+    fgfw_epoll_thread_reg_inst(&(local_agent->tunnel->epoll_thread), &(inst->epoll_inst), 0);
 
     /* add into active list */
     fgfw_listadd_tail(&(inst->node), &(local_agent->active_local_conn));
@@ -215,7 +215,7 @@ static int local_agent_vacc_host_uninit(struct _vacc_host *vacc_host, void *opaq
     inst->valid = 0;
 
     /* remove from epoll thread mngr */
-    fgfw_epoll_thread_reg_uninst(&(local_agent->epoll_thread), &(inst->epoll_inst));
+    fgfw_epoll_thread_reg_uninst(&(local_agent->tunnel->epoll_thread), &(inst->epoll_inst));
     inst->epoll_inst.fd = -1;
     inst->epoll_inst.epoll_inst_cb = NULL;
 
@@ -338,13 +338,6 @@ int fgfw_local_agent_create(fgfw_local_agent_t *local_agent, int mode, int port_
     local_agent->free_local_conn_tail = FGFW_LOCAL_AGENT_MAX_CONN;
     local_agent->free_local_conn_head = 0;
 
-    /* create epoll thread */
-    ret = fgfw_epoll_thread_create(&(local_agent->epoll_thread));
-    if (ret) {
-        fgfw_err("fgfw_epoll_thread_create() return %d\n", ret);
-        return ret;
-    }
-
     /* create listen socket */
     for (i = 0; i < n_local_agent_port; i++) {
         fgfw_local_agent_conn_t *inst;
@@ -393,8 +386,6 @@ int fgfw_local_agent_destroy(fgfw_local_agent_t *local_agent)
     FGFW_LISTENTRYWALK_SAVE(p, n, &(local_agent->active_local_conn), node) {
         local_agent->local_conn_close(local_agent, p->conn_id);
     }
-
-    fgfw_epoll_thread_destroy(&(local_agent->epoll_thread));
 
     return FGFW_RETVALUE_OK;
 }

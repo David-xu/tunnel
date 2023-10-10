@@ -33,6 +33,7 @@ typedef int fgfw_tunnel_session_id;
 #define FGFW_TUNNEL_SESSION_ID_INVALID      ((fgfw_tunnel_session_id)(-1))
 
 #include "util.h"
+#include "crthread.h"
 #include "vacc_host.h"
 #include "epoll_worker.h"
 #include "transport.h"

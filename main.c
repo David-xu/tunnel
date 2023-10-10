@@ -345,7 +345,7 @@ int main(int argc, char *argv[])
     fgfw_local_agent_destroy(&(g_ctx.local_agent));
     fgfw_tunnel_destroy(&(g_ctx.tunnel));
 
-    fgfw_log("ext...\n");
+    fgfw_log("exit...\n");
 
     return 0;
 }

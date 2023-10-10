@@ -344,6 +344,154 @@ void fgfw_hexdump(const void *buf, uint32_t len)
     }
 }
 
+int fgfw_bitmap_init_ex(fgfw_bitmap_t *bm, const char *name, uint32_t n_total, uint32_t id_base, int clear)
+{
+    bm->magic = IOHUB_BITMAP_MAGIC;
+    bm->id_base = id_base;
+    bm->n_total = n_total;
+
+    memset(bm->name, 0, sizeof(bm->name));
+    strncpy(bm->name, name, sizeof(bm->name) - 1);
+
+    if (clear) {
+        bm->n_free = 0;
+        memset(bm->bm, 0, FGFW_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
+    } else {
+        bm->n_free = n_total;
+        memset(bm->bm, 0xff, FGFW_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
+    }
+
+    return 0;
+}
+
+int fgfw_bitmap_alloc(fgfw_bitmap_t *bm, uint32_t n, uint32_t *res)
+{
+    uint32_t i, j, max = FGFW_BITMAP_BMARRAY_SIZE(bm), cnt = 0;
+
+    if ((bm == NULL) || (res == NULL) || (n == 0)) {
+        /* invalid param */
+        return -1;
+    }
+
+    if (n > bm->n_free) {
+        /* no enough resource */
+        return -2;
+    }
+
+    for (i = 0; i < max; i++) {
+        while (bm->bm[i]) {
+            j = __builtin_ffsl(bm->bm[i]) - 1;
+            /* clear bitmap */
+            bm->bm[i] &= ~(1ULL << j);
+            res[cnt++] = bm->id_base + i * 64 + j;
+
+            if (cnt == n) {
+                goto _ret;
+            }
+        }
+    }
+_ret:
+    if (cnt != n) {
+        fgfw_err("bitmap %s, n_total %d, n_free %d, but no enough in bitmap",
+            bm->name, bm->n_total, bm->n_free);
+        return -2;
+    }
+
+    bm->n_free -= n;
+
+    return 0;
+}
+
+int fgfw_bitmap_alloc_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
+{
+    uint32_t i, j, id;
+    if (bm == NULL) {
+        /* invalid param */
+        return -1;
+    }
+
+    if ((specified_id < bm->id_base) || (specified_id >= (bm->id_base + bm->n_total))) {
+        /* invalid id in ids */
+        fgfw_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
+            bm->name, bm->id_base, bm->n_total, specified_id);
+        return -2;
+    }
+
+    id = specified_id - bm->id_base;
+    i = id / 64;
+    j = id % 64;
+
+    if ((bm->bm[i] & (1ULL << j)) == 0) {
+        /* specified id has already been occupied */
+        return -3;
+    }
+
+    bm->bm[i] &= ~(1ULL << j);
+    bm->n_free--;
+
+    return 0;
+}
+
+int fgfw_bitmap_free(fgfw_bitmap_t *bm, uint32_t n, uint32_t *ids)
+{
+    uint32_t idx, i, j, id;
+    if ((bm == NULL) || (ids == NULL) || (n == 0)) {
+        /* invalid param */
+        return -1;
+    }
+
+    for (idx = 0; idx < n; idx++) {
+        id = ids[idx];
+
+        if ((id < bm->id_base) || (id >= (bm->id_base + bm->n_total))) {
+            fgfw_err("bm %s, id_base %d, n_total %d, ids[%d] %d\n",
+                bm->name, bm->id_base, bm->n_total, idx, id);
+            return -2;
+        }
+
+        id -= bm->id_base;
+
+        i = id / 64;
+        j = id % 64;
+
+        if ((bm->bm[i] & (1ULL << j)) == 0) {
+            /**/
+            bm->bm[i] |= 1ULL << j;
+            bm->n_free++;
+        }
+    }
+
+    return 0;
+}
+
+int fgfw_bitmap_query_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
+{
+    uint32_t i, j, id;
+    if (bm == NULL) {
+        /* invalid param */
+        return -1;
+    }
+
+    if ((specified_id < bm->id_base) || (specified_id >= (bm->id_base + bm->n_total))) {
+        /* invalid id in ids */
+        fgfw_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
+            bm->name, bm->id_base, bm->n_total, specified_id);
+        return -2;
+    }
+
+    id = specified_id - bm->id_base;
+    i = id / 64;
+    j = id % 64;
+
+    if ((bm->bm[i] & (1ULL << j)) == 0) {
+        /* specified id has already been occupied */
+        return 0;
+    }
+
+    return 1;
+}
+
+
 static fgfw_range_res_node_t *fgfw_range_res_get_node(fgfw_range_res_t *mngr)
 {
     fgfw_range_res_node_t *ret;
