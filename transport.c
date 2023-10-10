@@ -66,7 +66,7 @@ static int fgfw_transport_pending_enq(fgfw_transport_t *transport, void *buf, in
     if (len > left) {
         // pthread_mutex_unlock(&(transport->transport_op_big_lock));
 
-        fgfw_warn("transport %d, buff afull, len %d\n", transport->transport_id, len);
+        // fgfw_warn("transport %d, buff afull, len %d\n", transport->transport_id, len);
         /* no enough pending buf left */
         return FGFW_RETVALUE_NOENOUGHRES;
     }

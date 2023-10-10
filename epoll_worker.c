@@ -62,6 +62,7 @@ static int epoll_sub_crthread_func(crthread_tcb_t *tcb, void *p)
     while (1) {
         crthread_sem_down(tcb, &(sub_crthread->sem), 0);
         while (sub_crthread->n_pending) {
+            fgfw_assert(sub_crthread->n_pending > 0);
             cur_cnt = sub_crthread->n_pending;
             cnt = 0;
             for (i = 0; i < FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD; i++) {
@@ -70,15 +71,18 @@ static int epoll_sub_crthread_func(crthread_tcb_t *tcb, void *p)
                 }
                 if (FGFW_RAW_BITMAP_TEST(sub_crthread->pending_bm, i)) {
                     epoll_inst = sub_crthread->pending_inst[i];
-                    epoll_inst->epoll_inst_cb(epoll_inst);
 
+                    /* clean pending state first, epoll_inst->epoll_inst_cb() may switch */
                     sub_crthread->pending_inst[i] = NULL;
                     FGFW_RAW_BITMAP_CLEAR(sub_crthread->pending_bm, i);
                     sub_crthread->n_pending--;
 
+                    epoll_inst->epoll_inst_cb(epoll_inst);
+
                     cnt++;
                 }
             }
+
             if (sub_crthread->n_pending) {
                 fgfw_log("[%d] sub_crthread->n_pending %d...\n", sub_crthread->idx, sub_crthread->n_pending);
             }
@@ -215,6 +219,7 @@ int fgfw_epoll_thread_reg_uninst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_i
 
     FGFW_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
         if (p == epoll_inst) {
+            finded = 1;
             break;
         }
     }
@@ -224,11 +229,18 @@ int fgfw_epoll_thread_reg_uninst(fgfw_epoll_thread_t *epoll_thread, fgfw_epoll_i
 
     if (epoll_inst->sub_crthread_id != -1) {
         sub_crthread = &(epoll_thread->sub_crthread[epoll_inst->sub_crthread_id]);
-        fgfw_bitmap_free(&(sub_crthread->bm), 1, &(epoll_inst->idx_in_sub_crthread));
 
-        sub_crthread->pending_inst[epoll_inst->idx_in_sub_crthread] = NULL;
-        FGFW_RAW_BITMAP_CLEAR(sub_crthread->pending_bm, epoll_inst->idx_in_sub_crthread);
-        sub_crthread->n_pending--;
+        if (FGFW_RAW_BITMAP_TEST(sub_crthread->pending_bm, epoll_inst->idx_in_sub_crthread)) {
+            sub_crthread->pending_inst[epoll_inst->idx_in_sub_crthread] = NULL;
+            FGFW_RAW_BITMAP_CLEAR(sub_crthread->pending_bm, epoll_inst->idx_in_sub_crthread);
+            sub_crthread->n_pending--;
+#if 0
+            fgfw_log("[%d] [%d] sub_crthread->n_pending %d\n",
+                sub_crthread->idx, epoll_inst->idx_in_sub_crthread, sub_crthread->n_pending);
+#endif
+        }
+
+        fgfw_bitmap_free(&(sub_crthread->bm), 1, &(epoll_inst->idx_in_sub_crthread));
     }
 
     event.data.ptr = epoll_inst;

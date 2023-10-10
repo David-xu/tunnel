@@ -43,7 +43,7 @@ typedef struct _fgfw_epoll_thread_sub_crthread {
     fgfw_bitmap_t                   bm;
     uint64_t                        bm_space[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD / 64];
 
-    volatile uint32_t               n_pending;
+    volatile int                    n_pending;
     uint64_t                        pending_bm[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD / 64];
     fgfw_epoll_inst_t               *pending_inst[FGFW_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD];
 } fgfw_epoll_thread_sub_crthread_t;
