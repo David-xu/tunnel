@@ -4,6 +4,7 @@
 --port_list=49000,49001,49002
 --transport_send_bps=10000           # 传输层限速值, 单位Bps(Byte per second) 不配置时默认为1000Bps
 --port_agent_offset=1                # server端发出的connect与client端监听的端口号偏移
+--tunnel_default_key=0x1234abcd5678ef9097530864ace345bf
 server模式:
 
 client模式:
@@ -22,9 +23,9 @@ a)协商密钥
 
 
 # client模式
-./fgfw --mode=client --serv_ip=127.0.0.1 --port_list=40000,40001,50002,50003 --transport_send_bps=100000 --local_agent_port_list=3000 --port_agent_offset=1
+./fgfw --mode=client --serv_ip=127.0.0.1 --tunnel_default_key=0x1234abcd5678ef9097530864ace345bf --port_list=40000,40001,50002,50003 --transport_send_bps=100000 --local_agent_port_list=3000 --port_agent_offset=1
 # server模式
-./fgfw --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001,50002,50003 --transport_send_bps=100000
+./fgfw --mode=server --serv_ip=127.0.0.1 --tunnel_default_key=0x1234abcd5678ef9097530864ace345bf --port_list=40000,40001,50002,50003 --transport_send_bps=100000
 
 # 测试
 ./fgfw --testbench=0 --mode=server --local_agent_port_list=3000
