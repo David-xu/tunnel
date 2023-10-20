@@ -7,7 +7,7 @@ typedef struct {
     int                 valid;
     int                 idx;
     vacc_host_t         vacc_host;
-    fgfw_epoll_inst_t   epoll_inst;
+    rn_epoll_inst_t     epoll_inst;
 } testbench_inst_t;
 
 typedef struct {
@@ -24,7 +24,7 @@ typedef struct {
 
 typedef struct {
     testbench_inst_t            inst_pool[TESTBENCH_MAX_INST];
-    fgfw_epoll_thread_t         epoll_thread;
+    rn_epoll_thread_t           epoll_thread;
     uint8_t                     sendbuf[TESTBENCH_PKT_MAXLEN];
 } testbench_ctx_t;
 
@@ -54,24 +54,24 @@ static vacc_host_t* testbench_get(struct _vacc_host *vacc_host, void *opaque)
 
 static void testbench_put(struct _vacc_host *vacc_host, void *opaque)
 {
-    testbench_inst_t *inst = FGFW_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
+    testbench_inst_t *inst = RN_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
     inst->valid = 0;
 }
 
-static void testbench_epoll_inst_cb(fgfw_epoll_inst_t *epoll_inst)
+static void testbench_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
 {
-    testbench_inst_t *inst = FGFW_GETCONTAINER(epoll_inst, testbench_inst_t, epoll_inst);
+    testbench_inst_t *inst = RN_GETCONTAINER(epoll_inst, testbench_inst_t, epoll_inst);
     vacc_host_read(&(inst->vacc_host));
 }
 
 static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
 {
     testbench_ctx_t *tb_ctx = (testbench_ctx_t *)opaque;
-    testbench_inst_t *inst = FGFW_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
+    testbench_inst_t *inst = RN_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
 
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
-        fgfw_log("%s listen socket init, idx %d\n",
+        rn_log("%s listen socket init, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -79,7 +79,7 @@ static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
             inst->idx);
         break;
     case VACC_HOST_INSTTYPE_SERVER_INST:
-        fgfw_log("%s server inst connect, idx %d\n",
+        rn_log("%s server inst connect, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -90,14 +90,14 @@ static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
             unsigned short port = ntohs(vacc_host->u.tcp.cli_addr.sin_port);
             char ipstr[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &in, ipstr, sizeof(ipstr));
-            fgfw_log("\t\tclient: %s(%d)\n", ipstr, port);
+            rn_log("\t\tclient: %s(%d)\n", ipstr, port);
         } else if (vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS) {
 
         }
 
         break;
     case VACC_HOST_INSTTYPE_CLIENT_INST:
-        fgfw_log("%s client inst connect, idx %d\n",
+        rn_log("%s client inst connect, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -105,13 +105,13 @@ static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
             inst->idx);
         break;
     default:
-        fgfw_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
         return -1;
     }
 
     inst->epoll_inst.epoll_inst_cb = testbench_epoll_inst_cb;
     inst->epoll_inst.fd = vacc_host->sock_fd;
-    fgfw_epoll_thread_reg_inst(&(tb_ctx->epoll_thread), &(inst->epoll_inst), 0);
+    rn_epoll_thread_reg_inst(&(tb_ctx->epoll_thread), &(inst->epoll_inst));
 
     return 0;
 }
@@ -119,11 +119,11 @@ static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
 static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
 {
     testbench_ctx_t *tb_ctx = (testbench_ctx_t *)opaque;
-    testbench_inst_t *inst = FGFW_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
+    testbench_inst_t *inst = RN_GETCONTAINER(vacc_host, testbench_inst_t, vacc_host);
 
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
-        fgfw_log("%s listen socket uninit, idx %d\n",
+        rn_log("%s listen socket uninit, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -131,7 +131,7 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
             inst->idx);
         break;
     case VACC_HOST_INSTTYPE_SERVER_INST:
-        fgfw_log("%s server inst disconnect, idx %d\n",
+        rn_log("%s server inst disconnect, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -139,7 +139,7 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
             inst->idx);
         break;
     case VACC_HOST_INSTTYPE_CLIENT_INST:
-        fgfw_log("%s client inst disconnect, idx %d\n",
+        rn_log("%s client inst disconnect, idx %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
@@ -147,11 +147,11 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
             inst->idx);
         break;
     default:
-        fgfw_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
         return -1;
     }
 
-    fgfw_epoll_thread_reg_uninst(&(tb_ctx->epoll_thread), &(inst->epoll_inst));
+    rn_epoll_thread_reg_uninst(&(tb_ctx->epoll_thread), &(inst->epoll_inst));
 
     return 0;
 }
@@ -166,17 +166,17 @@ static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque,
 
     g_stop = 1;
     
-    fgfw_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
+    rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
     // fgfw_hexdump(buf, len);
-    fgfw_assert(cnt == head->cnt);
-    fgfw_assert(head->magic == TESTBENCH_PKT_MAGIC);
+    rn_assert(cnt == head->cnt);
+    rn_assert(head->magic == TESTBENCH_PKT_MAGIC);
 
-    crc_calc = fgfw_crc32c_sw(head + 1, head->payload_len);
-    fgfw_assert(head->crc == crc_calc);
+    crc_calc = rn_crc32c_sw(head + 1, head->payload_len);
+    rn_assert(head->crc == crc_calc);
 
     total_len += len;
-    fgfw_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
+    rn_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
 
     cnt++;
 
@@ -188,7 +188,7 @@ static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque,
 #else
 static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
 {
-    fgfw_log("recv len %d, echo send\n", len);
+    rn_log("recv len %d, echo send\n", len);
 
     /* just echo */
     return vacc_host_write(vacc_host, buf, len);
@@ -207,25 +207,25 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
     
     g_stop = 1;
 
-    fgfw_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
+    rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
     // fgfw_hexdump(buf, len);
-    fgfw_assert(cnt == head->cnt);
-    fgfw_assert(head->magic == TESTBENCH_PKT_MAGIC);
-    fgfw_assert(head->payload_len == g_payload_len_log[cnt]);
-    crc_calc = fgfw_crc32c_sw(head + 1, head->payload_len);
+    rn_assert(cnt == head->cnt);
+    rn_assert(head->magic == TESTBENCH_PKT_MAGIC);
+    rn_assert(head->payload_len == g_payload_len_log[cnt]);
+    crc_calc = rn_crc32c_sw(head + 1, head->payload_len);
     if (head->crc != crc_calc) {
-        fgfw_err("head->crc != crc_calc\n");
+        rn_err("head->crc != crc_calc\n");
         for (i = 0; i < head->payload_len; i++) {
             if (((uint8_t *)buf)[i + sizeof(testbench_pkt_head_t)] != ctx->sendbuf[i + sizeof(testbench_pkt_head_t)]) {
-                fgfw_assert(0);
+                rn_assert(0);
             }
         }
     }
-    fgfw_assert(head->crc == crc_calc);
+    rn_assert(head->crc == crc_calc);
 
     total_len += len;
-    fgfw_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
+    rn_log("cnt %d, len %d, check done, total %d\n", cnt, len, total_len);
 
     g_stop = 0;
 
@@ -248,7 +248,7 @@ static int testbench_server(int port)
 
     memset(&g_tb_ctx, 0, sizeof(testbench_ctx_t));
 
-    fgfw_epoll_thread_create(&(g_tb_ctx.epoll_thread));
+    rn_epoll_thread_create(&(g_tb_ctx.epoll_thread));
 
     memset(&param, 0, sizeof(param));
     param.transtype = VACC_HOST_TRANSTYPE_TCP;
@@ -278,8 +278,8 @@ static int testbench_server(int port)
     listen = testbench_get(NULL, &g_tb_ctx);
     ret = vacc_host_create(listen, &param);
     if (ret != VACC_HOST_RET_OK) {
-        fgfw_err("vacc_host_create() return %d\n", ret);
-        return FGFW_RETVALUE_ERR;
+        rn_err("vacc_host_create() return %d\n", ret);
+        return RN_RETVALUE_ERR;
     }
 
     while (1) {
@@ -299,7 +299,7 @@ static int testbench_client(int port, uint64_t send_len)
 
     memset(&g_tb_ctx, 0, sizeof(testbench_ctx_t));
 
-    fgfw_epoll_thread_create(&(g_tb_ctx.epoll_thread));
+    rn_epoll_thread_create(&(g_tb_ctx.epoll_thread));
 
     memset(&param, 0, sizeof(param));
     param.transtype = VACC_HOST_TRANSTYPE_TCP;
@@ -324,8 +324,8 @@ static int testbench_client(int port, uint64_t send_len)
     cli = testbench_get(NULL, &g_tb_ctx);
     ret = vacc_host_create(cli, &param);
     if (ret != VACC_HOST_RET_OK) {
-        fgfw_err("vacc_host_create() return %d\n", ret);
-        return FGFW_RETVALUE_ERR;
+        rn_err("vacc_host_create() return %d\n", ret);
+        return RN_RETVALUE_ERR;
     }
 
     for (i = 0; i < TESTBENCH_PKT_MAXLEN; i++) {
@@ -342,12 +342,12 @@ static int testbench_client(int port, uint64_t send_len)
         pkt_head->magic = TESTBENCH_PKT_MAGIC;
         pkt_head->cnt = cnt;
         pkt_head->payload_len = len;
-        pkt_head->crc = fgfw_crc32c_sw(pkt_head + 1, len);
+        pkt_head->crc = rn_crc32c_sw(pkt_head + 1, len);
 
         g_payload_len_log[cnt] = pkt_head->payload_len;
 
         if (vacc_host_write(cli, g_tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
-            fgfw_log("cnt %d, len %d\n", cnt, len);
+            rn_log("cnt %d, len %d\n", cnt, len);
 
             cnt++;
 
@@ -369,9 +369,9 @@ static int testbench_client(int port, uint64_t send_len)
 
 int do_testbench(int mode, int testmode, int port[], uint64_t send_len)
 {
-    if (mode == FGFW_WORKMODE_SERVER) {
+    if (mode == RN_WORKMODE_SERVER) {
         testbench_server(port[0]);
-    } else if (mode == FGFW_WORKMODE_CLIENT) {
+    } else if (mode == RN_WORKMODE_CLIENT) {
         testbench_client(port[0], send_len);
     }
 

@@ -1,14 +1,8 @@
 #include "pub.h"
 
+running_ctx_t g_ctx;
+
 char * const short_options="hv";
-
-static running_ctx_t g_ctx = {0};
-
-#if 0
-uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
-#else
-uint64_t g_dbgprint_flag = 0;
-#endif
 
 enum {
     ARGPARAM_BEGIN = 256,
@@ -37,7 +31,7 @@ struct option long_options[]={
     {"port_agent_offset", 1, NULL, ARGPARAM_PORT_AGENT_OFFSET},
 };
 
-static void tunnel_usage(char* progname)
+static void rottenut_usage(char* progname)
 {
     printf("usage: %s" "[--help|-h]|[--version|-v]" "\n", progname);
     printf("Commonly arguments:\n");
@@ -85,53 +79,12 @@ static void setup_signal_handling(void)
 
 int do_server(running_ctx_t *ctx)
 {
-    int ret;
-    /* create tunnel */
-    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
-
-    /* create local agent */
-    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, ctx->port_agent_offset, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
-    if (ret) {
-        fgfw_err("local agent create faild %d\n", ret);
-        fgfw_tunnel_destroy(&(ctx->tunnel));
-        return 0;
-    }
-
     return 0;
 }
 
 int do_client(running_ctx_t *ctx)
 {
-    int ret;
-
-    /* create tunnel */
-    ret = fgfw_tunnel_create(&(ctx->tunnel), ctx->mode, ctx->transport_send_bps, ctx->serv_ip, ctx->n_port, ctx->port_list, ctx->default_key);
-
-    /* create local agent */
-    ret = fgfw_local_agent_create(&(ctx->local_agent), ctx->mode, ctx->port_agent_offset, &(ctx->tunnel), ctx->n_local_agent_port, ctx->local_agent_port_list);
-    if (ret) {
-        fgfw_err("local agent create faild %d\n", ret);
-        fgfw_tunnel_destroy(&(ctx->tunnel));
-        return 0;
-    }
-
     return 0;
-}
-
-#define FGFW_TOKEN_FILL_CYCLE_MS                            1
-
-static int tb_insert_timer_1ms(void *param)
-{
-    running_ctx_t *ctx = (running_ctx_t *)param;
-    
-    fgfw_transport_pool_fill_token_all(&(ctx->tunnel.transport_pool), FGFW_TOKEN_FILL_CYCLE_MS);
-
-    return 0;
-}
-
-static void set_default_aes_key(running_ctx_t *ctx) {
-    memset(ctx->default_key, 0, sizeof(ctx->default_key));
-    strncpy((char *)ctx->default_key, "abcd01234567ef", sizeof(ctx->default_key));
 }
 
 static void cmd_loop(void)
@@ -149,18 +102,14 @@ static void cmd_loop(void)
         total_len = strlen(line);
         line[total_len - 1] = 0;
         total_len -= 1;
-        argc = fgfw_stdiv(line, total_len, sizeof(len) / sizeof(len[0]), argv, len, 2, " \n", 0);
+        argc = rn_stdiv(line, total_len, sizeof(len) / sizeof(len[0]), argv, len, 2, " \n", 0);
         for (i = 0; i < argc; i++) {
             argv[i][len[i]] = 0;
             if (memcmp(argv[0], "--dump", 6) == 0) {
-                if (g_ctx.mode == FGFW_WORKMODE_CLIENT) {
-                    fgfw_log("client:\n");
-                    fgfw_local_agent_dump(&(g_ctx.local_agent));
-                    fgfw_tunnel_dump(&(g_ctx.tunnel));
+                if (g_ctx.mode == RN_WORKMODE_CLIENT) {
+                    rn_log("client:\n");
                 } else {
-                    fgfw_log("server:\n");
-                    fgfw_tunnel_dump(&(g_ctx.tunnel));
-                    fgfw_local_agent_dump(&(g_ctx.local_agent));
+                    rn_log("server:\n");
                 }
             } else if (memcmp(argv[0], "-q", 2) == 0) {
                 g_ctx.running = 0;
@@ -169,27 +118,27 @@ static void cmd_loop(void)
     }
 }
 
-extern int do_testbench(int mode, int testmode, int port[], uint64_t send_len);
-
 int main(int argc, char *argv[])
 {
     int cmdtype, longp_idx, i, testbench = 0, testbench_mode = 0;
     uint64_t len;
 
-    set_default_aes_key(&g_ctx);
+    /* set default key */
+    memset(g_ctx.default_key, 0, sizeof(g_ctx.default_key));
+    strncpy((char *)g_ctx.default_key, "abcd01234567ef", sizeof(g_ctx.default_key));
 
     while ((cmdtype = getopt_long(argc, argv, short_options, long_options, &longp_idx)) != -1) {
         switch (cmdtype) {
         case 'h':
-            tunnel_usage(argv[0]);
+            rottenut_usage(argv[0]);
             return 0;
         case 'v':
             break;
         case ARGPARAM_MODE:
             if (strcmp(optarg, "server") == 0) {
-                g_ctx.mode = FGFW_WORKMODE_SERVER;
+                g_ctx.mode = RN_WORKMODE_SERVER;
             } else if (strcmp(optarg, "client") == 0) {
-                g_ctx.mode = FGFW_WORKMODE_CLIENT;
+                g_ctx.mode = RN_WORKMODE_CLIENT;
             } else {
                 printf("invalid mode %s\n", optarg);
                 return 0;
@@ -233,7 +182,7 @@ int main(int argc, char *argv[])
             int i, len = strlen(optarg), v, n_valid = 0;
             memset(&g_ctx.default_key, 0, sizeof(g_ctx.default_key));
             for (i = 0; i < len; i++) {
-                v = fgfw_c2n(((char *)optarg)[i]);
+                v = rn_c2n(((char *)optarg)[i]);
                 if (v < 0) {
                     continue;
                 } else {
@@ -271,43 +220,27 @@ int main(int argc, char *argv[])
         }
     }
 
-    fgfw_log("serv_ip %s, n_port %d:\n", g_ctx.serv_ip, g_ctx.n_port);
+    rn_log("serv_ip %s, n_port %d:\n", g_ctx.serv_ip, g_ctx.n_port);
     for (i = 0; i < g_ctx.n_port; i++) {
-        fgfw_log("\t\t%d\n", g_ctx.port_list[i]);
+        rn_log("\t\t%d\n", g_ctx.port_list[i]);
     }
-    fgfw_log("n_local_agent_port %d:\n", g_ctx.n_local_agent_port);
+    rn_log("n_local_agent_port %d:\n", g_ctx.n_local_agent_port);
     for (i = 0; i < g_ctx.n_local_agent_port; i++) {
-        fgfw_log("\t\t%d\n", g_ctx.local_agent_port_list[i]);
+        rn_log("\t\t%d\n", g_ctx.local_agent_port_list[i]);
     }
-    fgfw_log("default aes key:\n");
-    fgfw_hexdump(g_ctx.default_key, sizeof(g_ctx.default_key));
+    rn_log("default aes key:\n");
+    rn_hexdump(g_ctx.default_key, sizeof(g_ctx.default_key));
     if (g_ctx.transport_send_bps == 0) {
-        g_ctx.transport_send_bps = FGFW_TRANSPORT_DEFAULT_SEND_BPS;
+        g_ctx.transport_send_bps = RN_TRANSPORT_DEFAULT_SEND_BPS;
     }
-    fgfw_log("transport_send_bps: %d\n", g_ctx.transport_send_bps);
-    fgfw_log("port_agent_offset: %d\n", g_ctx.port_agent_offset);
+    rn_log("transport_send_bps: %d\n", g_ctx.transport_send_bps);
+    rn_log("port_agent_offset: %d\n", g_ctx.port_agent_offset);
     
-#if 0
-    unsigned char key[16] = "0123456789abcdef";
-    unsigned char plaintext[16] = "hello, world!";
-    unsigned char ciphertext[16] = {0};
-    unsigned char decrypted[16] = {0};
-
-    fgfw_aes_encrypt(key, plaintext, ciphertext);
-
-    fgfw_aes_decrypt(key, ciphertext, decrypted);
-    fgfw_hexdump(decrypted, 16);
-#endif
-    FGFW_BUILD_BUG_ON(sizeof(fgfw_tunnel_protocol_pkt_head_t) != FGFW_TRANSPORT_PKT_ALIGN);
-    FGFW_BUILD_BUG_ON(sizeof(fgfw_tunnel_protocol_pkt_session_data_t) != FGFW_TRANSPORT_PKT_ALIGN);
-    // FGFW_BUILD_BUG_ON(FGFW_TRANSPORT_MAX_SEND_LEN >= (FGFW_TRANSPORT_RECVBUF_SIZE / 16));
-    FGFW_BUILD_BUG_ON((FGFW_TUNNEL_SESSION_RECV_RING_BUF_SIZE % FGFW_TRANSPORT_RECVBUF_SIZE) != 0);
-
     srand(time(0));
 
     if (testbench) {
         if (g_ctx.n_local_agent_port == 0) {
-            fgfw_log("need set --local_agent_port_list\n");
+            rn_log("need set --local_agent_port_list\n");
             return 0;
         }
         
@@ -317,24 +250,15 @@ int main(int argc, char *argv[])
     setup_signal_handling();
 
     switch (g_ctx.mode) {
-    case FGFW_WORKMODE_SERVER:
+    case RN_WORKMODE_SERVER:
         do_server(&g_ctx);
         break;
-    case FGFW_WORKMODE_CLIENT:
+    case RN_WORKMODE_CLIENT:
         do_client(&g_ctx);
         break;
     default:
-        tunnel_usage(argv[0]);
+        rottenut_usage(argv[0]);
         return 0;
-    }
-
-    /* ugly */
-    g_ctx.tunnel.local_agent = &(g_ctx.local_agent);
-
-    fgfw_timerfw_add_timer(&(g_ctx.tunnel.epoll_thread), 100000, FGFW_TOKEN_FILL_CYCLE_MS * 1000, tb_insert_timer_1ms, &g_ctx);
-
-    if (g_ctx.mode == FGFW_WORKMODE_CLIENT) {
-        fgfw_tunnel_connect_to_serv(&(g_ctx.tunnel), g_ctx.serv_ip, g_ctx.n_port, g_ctx.port_list);
     }
 
     g_ctx.running = 1;
@@ -342,10 +266,7 @@ int main(int argc, char *argv[])
         cmd_loop();
     }
 
-    fgfw_local_agent_destroy(&(g_ctx.local_agent));
-    fgfw_tunnel_destroy(&(g_ctx.tunnel));
-
-    fgfw_log("exit...\n");
+    rn_log("exit...\n");
 
     return 0;
 }

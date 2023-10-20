@@ -1,4 +1,4 @@
-APP=fgfw
+APP=rottenNut
 
 #Makefile
 CC  = gcc

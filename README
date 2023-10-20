@@ -1,3 +1,5 @@
+# 依赖openssl库用于aes加解密
+
 #1.参数列表
 --mode=[client/server]
 --serv_ip=1.1.1.1

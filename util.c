@@ -182,7 +182,7 @@ static const uint32_t g_crc32c_table[256] = {
  * crc using table.
  */
 
-uint32_t fgfw_crc32c_sw(const void *data, uint64_t length)
+uint32_t rn_crc32c_sw(const void *data, uint64_t length)
 {
     //uint32_t crc = ~0;
     uint32_t crc = 0;
@@ -194,7 +194,7 @@ uint32_t fgfw_crc32c_sw(const void *data, uint64_t length)
     return crc;
 }
 
-int fgfw_printf(const char *fmt, ...)
+int rn_printf(const char *fmt, ...)
 {
     char buf[32];
     char tmp[1024];
@@ -213,13 +213,13 @@ int fgfw_printf(const char *fmt, ...)
     return n;
 }
 
-void fgfw_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
+void rn_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
     AES_KEY aes_key;
     AES_set_encrypt_key(key, 128, &aes_key);
     AES_ecb_encrypt(input, output, &aes_key, AES_ENCRYPT);
 }
 
-void fgfw_aes_decrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
+void rn_aes_decrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
     AES_KEY aes_key;
     AES_set_decrypt_key(key, 128, &aes_key);
     AES_ecb_encrypt(input, output, &aes_key, AES_DECRYPT);
@@ -227,7 +227,7 @@ void fgfw_aes_decrypt(const unsigned char *key, const unsigned char *input, unsi
 
 #define STDIVCTRL_EMPTYSUBSTR  1
 
-int fgfw_stdiv
+int rn_stdiv
 (
 	char *buf,			/* input */
 	int buflen,			/* input */
@@ -310,7 +310,7 @@ stdiv_nextch:
     return ret;
 }
 
-void fgfw_hexdump(const void *buf, uint32_t len)
+void rn_hexdump(const void *buf, uint32_t len)
 {
     const uint32_t line_w = 16;
     uint32_t i, v, off;
@@ -326,8 +326,8 @@ void fgfw_hexdump(const void *buf, uint32_t len)
 
         v = ((uint8_t *)buf)[i];
 
-        strbuf[line_w + 1 + off * 3] = fgfw_n2c(v >> 4);
-        strbuf[line_w + 1 + off * 3 + 1] = fgfw_n2c(v & 0xf);
+        strbuf[line_w + 1 + off * 3] = rn_n2c(v >> 4);
+        strbuf[line_w + 1 + off * 3 + 1] = rn_n2c(v & 0xf);
 
         if ((v >= 32) && (v <= 126)) {
             strbuf[off] = (char)v;
@@ -336,17 +336,17 @@ void fgfw_hexdump(const void *buf, uint32_t len)
         }
 
         if (off == (line_w - 1)) {
-            fgfw_log("%s\n", strbuf);
+            rn_log("%s\n", strbuf);
         }
     }
     if (len % line_w) {
-        fgfw_log("%s\n", strbuf);
+        rn_log("%s\n", strbuf);
     }
 }
 
-int fgfw_bitmap_init_ex(fgfw_bitmap_t *bm, const char *name, uint32_t n_total, uint32_t id_base, int clear)
+int rn_bitmap_init_ex(rn_bitmap_t *bm, const char *name, uint32_t n_total, uint32_t id_base, int clear)
 {
-    bm->magic = IOHUB_BITMAP_MAGIC;
+    bm->magic = RN_BITMAP_MAGIC;
     bm->id_base = id_base;
     bm->n_total = n_total;
 
@@ -355,18 +355,18 @@ int fgfw_bitmap_init_ex(fgfw_bitmap_t *bm, const char *name, uint32_t n_total, u
 
     if (clear) {
         bm->n_free = 0;
-        memset(bm->bm, 0, FGFW_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
+        memset(bm->bm, 0, RN_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
     } else {
         bm->n_free = n_total;
-        memset(bm->bm, 0xff, FGFW_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
+        memset(bm->bm, 0xff, RN_BITMAP_BMARRAY_SIZE(bm) * sizeof(*bm->bm));
     }
 
     return 0;
 }
 
-int fgfw_bitmap_alloc(fgfw_bitmap_t *bm, uint32_t n, uint32_t *res)
+int rn_bitmap_alloc(rn_bitmap_t *bm, uint32_t n, uint32_t *res)
 {
-    uint32_t i, j, max = FGFW_BITMAP_BMARRAY_SIZE(bm), cnt = 0;
+    uint32_t i, j, max = RN_BITMAP_BMARRAY_SIZE(bm), cnt = 0;
 
     if ((bm == NULL) || (res == NULL) || (n == 0)) {
         /* invalid param */
@@ -392,7 +392,7 @@ int fgfw_bitmap_alloc(fgfw_bitmap_t *bm, uint32_t n, uint32_t *res)
     }
 _ret:
     if (cnt != n) {
-        fgfw_err("bitmap %s, n_total %d, n_free %d, but no enough in bitmap",
+        rn_err("bitmap %s, n_total %d, n_free %d, but no enough in bitmap",
             bm->name, bm->n_total, bm->n_free);
         return -2;
     }
@@ -402,7 +402,7 @@ _ret:
     return 0;
 }
 
-int fgfw_bitmap_alloc_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
+int rn_bitmap_alloc_specified(rn_bitmap_t *bm, uint32_t specified_id)
 {
     uint32_t i, j, id;
     if (bm == NULL) {
@@ -412,7 +412,7 @@ int fgfw_bitmap_alloc_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
 
     if ((specified_id < bm->id_base) || (specified_id >= (bm->id_base + bm->n_total))) {
         /* invalid id in ids */
-        fgfw_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
+        rn_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
             bm->name, bm->id_base, bm->n_total, specified_id);
         return -2;
     }
@@ -432,7 +432,7 @@ int fgfw_bitmap_alloc_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
     return 0;
 }
 
-int fgfw_bitmap_free(fgfw_bitmap_t *bm, uint32_t n, uint32_t *ids)
+int fgfw_bitmap_free(rn_bitmap_t *bm, uint32_t n, uint32_t *ids)
 {
     uint32_t idx, i, j, id;
     if ((bm == NULL) || (ids == NULL) || (n == 0)) {
@@ -444,7 +444,7 @@ int fgfw_bitmap_free(fgfw_bitmap_t *bm, uint32_t n, uint32_t *ids)
         id = ids[idx];
 
         if ((id < bm->id_base) || (id >= (bm->id_base + bm->n_total))) {
-            fgfw_err("bm %s, id_base %d, n_total %d, ids[%d] %d\n",
+            rn_err("bm %s, id_base %d, n_total %d, ids[%d] %d\n",
                 bm->name, bm->id_base, bm->n_total, idx, id);
             return -2;
         }
@@ -464,7 +464,7 @@ int fgfw_bitmap_free(fgfw_bitmap_t *bm, uint32_t n, uint32_t *ids)
     return 0;
 }
 
-int fgfw_bitmap_query_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
+int rn_bitmap_query_specified(rn_bitmap_t *bm, uint32_t specified_id)
 {
     uint32_t i, j, id;
     if (bm == NULL) {
@@ -474,7 +474,7 @@ int fgfw_bitmap_query_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
 
     if ((specified_id < bm->id_base) || (specified_id >= (bm->id_base + bm->n_total))) {
         /* invalid id in ids */
-        fgfw_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
+        rn_err("bm %s, id_base %d, n_total %d, specified_id %d\n",
             bm->name, bm->id_base, bm->n_total, specified_id);
         return -2;
     }
@@ -489,279 +489,4 @@ int fgfw_bitmap_query_specified(fgfw_bitmap_t *bm, uint32_t specified_id)
     }
 
     return 1;
-}
-
-
-static fgfw_range_res_node_t *fgfw_range_res_get_node(fgfw_range_res_t *mngr)
-{
-    fgfw_range_res_node_t *ret;
-    ret = malloc(sizeof(fgfw_range_res_node_t));
-    if (ret) {
-        mngr->putget_cnt++;
-    }
-
-    return ret;
-}
-
-static void fgfw_range_res_put_node(fgfw_range_res_t *mngr, fgfw_range_res_node_t *node)
-{
-    mngr->putget_cnt--;
-    free(node);
-}
-
-int fgfw_range_res_init(fgfw_range_res_t *mngr, uint64_t base, uint64_t size, int empty)
-{
-    fgfw_initlisthead(&(mngr->freelist));
-    mngr->base = base;
-    mngr->size = size;
-    mngr->free = size;
-    mngr->n_node = 0;
-    mngr->putget_cnt = 0;
-
-    /*  */
-    if (empty == 0) {
-        fgfw_range_res_node_t *p;
-
-        p = fgfw_range_res_get_node(mngr);
-        if (p == NULL) {
-            fgfw_err("no resource.\n");
-            return -1;
-        }
-
-        p->base = base;
-        p->size = size;
-        fgfw_listadd_tail(&(p->node), &(mngr->freelist));
-        mngr->n_node++;
-    }
-
-    return 0;
-}
-
-int fgfw_range_res_uninit(fgfw_range_res_t *mngr)
-{
-    fgfw_range_res_node_t *p, *n;
-
-    if (!mngr->size) {
-        /* maybe not init yet, do nothing */
-        return 0;
-    }
-
-    FGFW_LISTENTRYWALK_SAVE(p, n, &(mngr->freelist), node) {
-        fgfw_range_res_put_node(mngr, p);
-    }
-
-    return 0;
-}
-
-/* ret -1: no resource */
-uint64_t fgfw_range_res_alloc(fgfw_range_res_t *mngr, uint64_t size)
-{
-    fgfw_range_res_node_t *p, *n;
-    uint64_t ret = FGFW_RANGE_RES_INVALID;
-
-    if (mngr->n_node == 0) {
-        return ret;
-    }
-
-    FGFW_LISTENTRYWALK_SAVE(p, n, &(mngr->freelist), node) {
-        if (p->size >= size) {
-            ret = p->base;
-            p->base += size;
-            p->size -= size;
-
-            if (p->size == 0) {
-                fgfw_listdel(&(p->node));
-                mngr->n_node--;
-                fgfw_range_res_put_node(mngr, p);
-            }
-            mngr->free -= size;
-
-            break;
-        }
-    }
-
-    return ret;
-}
-
-int fgfw_range_res_merge(fgfw_range_res_t *mngr, uint64_t base[2], uint64_t num[2], uint32_t dir)
-{
-    fgfw_range_res_node_t *p, *n;
-
-    if (mngr->n_node < 2) {
-        return -1;
-    }
-
-    p = FGFW_GETCONTAINER(mngr->freelist.next, typeof(*p), node);
-    n = FGFW_GETCONTAINER(p->node.next, typeof(*n), node);
-
-    if (p->node.next == &mngr->freelist) {
-        fgfw_err("freelist something wrong, n_node(%u) freelist(%p) freelist->next(%p) freelist->next->next(%p).\n",
-            mngr->n_node, mngr->freelist.next, p->node.next, n->node.next);
-        return -1;
-    }
-
-    if (fgfw_isrange_overlap(p->base, p->size, n->base, n->size)) {
-        /* over lap */
-        fgfw_err("[0x%lx, 0x%lx) overlap with free node [0x%lx, 0x%lx) something wrong.\n",
-            p->base, p->base + p->size, n->base, n->base + n->size);
-        return -1;
-    }
-
-    base[0] = p->base;
-    num[0] = p->size;
-    base[1] = n->base;
-    num[1] = n->size;
-
-    if (!dir) {
-        p->base = n->base - p->size;
-    }
-
-    p->size = p->size + n->size;
-    fgfw_listdel(&(n->node));
-    fgfw_range_res_put_node(mngr, n);
-    mngr->n_node--;
-
-    return 0;
-}
-
-/*
- * size: 0, alloc whole node matched by base
- */
-int fgfw_range_res_alloc_specified(fgfw_range_res_t *mngr, uint64_t base, uint64_t *size)
-{
-    fgfw_range_res_node_t *p, *n, *newp;
-
-    FGFW_LISTENTRYWALK_SAVE(p, n, &(mngr->freelist), node) {
-        if ((p->base <= base) && ((p->base + p->size) >= (base + *size))) {
-            if (p->base == base) {
-                if (*size == 0) {
-                    *size = p->size;
-                }
-
-                if ((p->base + p->size) == (base + *size)) {
-                    /* delete this node */
-                    fgfw_listdel(&(p->node));
-                    mngr->n_node--;
-                    fgfw_range_res_put_node(mngr, p);
-                } else {
-                    p->base = base + *size;
-                    p->size -= *size;
-                }
-            } else {
-                if (*size == 0) {
-                    return -3;
-                }
-
-                if ((p->base + p->size) == (base + *size)) {
-                    p->size -= *size;
-                } else {
-                    /* split */
-                    newp = fgfw_range_res_get_node(mngr);
-                    if (newp == NULL) {
-                        fgfw_err("no resource.\n");
-                        return -2;
-                    }
-
-                    /* add new node */
-                    newp->base = base + *size;
-                    newp->size = p->base + p->size - newp->base;
-                    fgfw_listadd(&(newp->node), &(p->node));
-                    mngr->n_node++;
-
-                    /* old one motify */
-                    p->size = base - p->base;
-                }
-            }
-
-            mngr->free -= *size;
-
-            return 0;
-        }
-    }
-
-    return -1;
-}
-
-void  fgfw_range_res_free(fgfw_range_res_t *mngr, uint64_t base, uint64_t size)
-{
-    fgfw_range_res_node_t *p, *n, *newp;
-
-    if (size == 0) {
-        return;
-    }
-
-    if ((base < mngr->base) || ((base + size) > (mngr->base + mngr->size))) {
-        fgfw_err("[0x%lx, 0x%lx) outof mngr range [0x%lx, 0x%lx)\n",
-            base, size, mngr->base, mngr->base + mngr->size);
-        fgfw_assert(0);
-        return;
-    }
-
-    FGFW_LISTENTRYWALK_SAVE(p, n, &(mngr->freelist), node) {
-        if ((base + size) < p->base) {
-            /* alloc new node and insert before p->node */
-            break;
-        } else if ((base + size) == p->base) {
-            /* combine with p, front */
-            p->base = base;
-            p->size = p->size + size;
-            goto _finish;
-        } else if (fgfw_isrange_overlap(base, size, p->base, p->size)) {
-            /* over lap */
-            fgfw_err("[0x%lx, 0x%lx) overlap with free node [0x%lx, 0x%lx) something wrong.\n",
-                base, base + size, p->base, p->base + p->size);
-            return;
-        } else if ((p->base + p->size) == base) {
-            /* combine with p, end */
-            p->size += size;
-
-            if (&(n->node) != &(mngr->freelist)) {
-                if ((p->base + p->size) > n->base) {
-                    p->size -= size;
-                    fgfw_err("[0x%lx, 0x%lx) overlap with free node [0x%lx, 0x%lx) something wrong.\n",
-                        base, base + size, n->base, n->base + n->size);
-                } else if ((p->base + p->size) == n->base) {
-                    p->size += n->size;
-
-                    /* del next node */
-                    fgfw_listdel(&(n->node));
-                    mngr->n_node--;
-                    fgfw_range_res_put_node(mngr, n);
-                }
-            }
-            goto _finish;
-        }
-    }
-
-    newp = fgfw_range_res_get_node(mngr);
-    if (newp == NULL) {
-        fgfw_err("no resource.\n");
-        return;
-    }
-
-    /* add new node before p */
-    newp->base = base;
-    newp->size = size;
-    fgfw_listadd_tail(&(newp->node), &(p->node));
-    mngr->n_node++;
-
-_finish:
-    mngr->free += size;
-}
-
-void fgfw_range_res_dump(fgfw_range_res_t *mngr, const char *prefix)
-{
-    uint32_t i = 0;
-    fgfw_range_res_node_t *p;
-
-    FGFW_LISTENTRYWALK(p, &(mngr->freelist), node) {
-        fgfw_log("%s[0x%016lx, 0x%016lx)\n", prefix, p->base, p->base + p->size);
-        i++;
-    }
-
-    fgfw_log("%smngr->base 0x%016lx, mngr->size 0x%016lx, mngr->putget_cnt %d, mngr->n_node %d, i %d\n",
-        prefix, mngr->base, mngr->base + mngr->size, mngr->putget_cnt, mngr->n_node, i);
-    if (i != mngr->n_node) {
-        fgfw_err("mngr->node %d != i %d\n", mngr->n_node, i);
-    }
 }
