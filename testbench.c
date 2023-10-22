@@ -33,13 +33,13 @@ static vacc_host_t* testbench_get(struct _vacc_host *vacc_host, void *opaque)
     int i;
     testbench_ctx_t *tb_ctx = (testbench_ctx_t *)opaque;
     testbench_inst_t *inst;
-    
+
     for (i = 0; i < TESTBENCH_MAX_INST; i++) {
         if (tb_ctx->inst_pool[i].valid == 0) {
             break;
         }
     }
-    
+
     if (i == TESTBENCH_MAX_INST) {
         return NULL;
     }
@@ -61,7 +61,7 @@ static void testbench_put(struct _vacc_host *vacc_host, void *opaque)
 static void testbench_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
 {
     testbench_inst_t *inst = RN_GETCONTAINER(epoll_inst, testbench_inst_t, epoll_inst);
-    vacc_host_read(&(inst->vacc_host));
+    vacc_host_read(&(inst->vacc_host), NULL, 0);
 }
 
 static int testbench_init(struct _vacc_host *vacc_host, void *opaque)
@@ -165,7 +165,7 @@ static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque,
     testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
 
     g_stop = 1;
-    
+
     rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
     // fgfw_hexdump(buf, len);
@@ -204,7 +204,7 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
     uint32_t crc_calc, i;
     testbench_ctx_t *ctx = (testbench_ctx_t *)opaque;
     testbench_pkt_head_t *head = (testbench_pkt_head_t *)buf;
-    
+
     g_stop = 1;
 
     rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));

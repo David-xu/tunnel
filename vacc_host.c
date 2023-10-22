@@ -458,19 +458,23 @@ retry:
     if (vacc_host->cb_recv) {
         vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, vacc_host->proto_abs.head_len + payload_len);
     } else {
-        printf("vacc_host_recv_data_normal() vacc_host->cb_recv == NULL.\n");
+        printf("vacc_host_recv_data_normal_proto() vacc_host->cb_recv == NULL.\n");
     }
 
     return VACC_HOST_RET_OK;
 }
 
-static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host)
+static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host, uint8_t *buf, int buf_len)
 {
-    uint8_t buf[64 * 1024];
     int ret;
+    uint8_t local_buf[64 * 1024];
+    if (buf == NULL) {
+        buf = local_buf;
+        buf_len = sizeof(local_buf);
+    }
 
 retry:
-    ret = read(vacc_host->sock_fd, buf, sizeof(buf));
+    ret = read(vacc_host->sock_fd, buf, buf_len);
     if (ret == 0) {
         return VACC_HOST_RET_PEERCLOSE;
     } else if (ret < 0) {
@@ -481,6 +485,8 @@ retry:
             /* peer close, just return 0 */
             return VACC_HOST_RET_PEERCLOSE;
         } else {
+            printf("read return %d, dead.\n", ret);
+            while (1) usleep(100000);
             return VACC_HOST_RET_READMSG_FAILD;
         }
     }
@@ -488,14 +494,12 @@ retry:
     /**/
     if (vacc_host->cb_recv) {
         vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, ret);
-    } else {
-        printf("vacc_host_recv_data_normal() vacc_host->cb_recv == NULL.\n");
     }
 
-    return VACC_HOST_RET_OK;
+    return ret;
 }
 
-static int vacc_host_recv_data_normal(vacc_host_t *vacc_host)
+static int vacc_host_recv_data_normal(vacc_host_t *vacc_host, uint8_t *buf, int buf_len)
 {
     if (vacc_host->sock_fd < 0) {
         return VACC_HOST_RET_INVALID_INST;
@@ -504,13 +508,13 @@ static int vacc_host_recv_data_normal(vacc_host_t *vacc_host)
     if (vacc_host->proto_abs.enable) {
         return vacc_host_recv_data_normal_proto(vacc_host);
     } else {
-        return vacc_host_recv_data_normal_without_proto(vacc_host);
+        return vacc_host_recv_data_normal_without_proto(vacc_host, buf, buf_len);
     }
 }
 
 static int vacc_host_recv_data_udp(vacc_host_t *vacc_host)
 {
-    
+
     vacc_host_addr_u addr;
     socklen_t len;
     int ret;
@@ -518,7 +522,7 @@ static int vacc_host_recv_data_udp(vacc_host_t *vacc_host)
 
     if (vacc_host->proto_abs.enable) {
         uint8_t buf[vacc_host->proto_abs.pkg_max_len];
-        
+
         len = sizeof(struct sockaddr_in);
         ret = recvfrom(vacc_host->sock_fd, buf, vacc_host->proto_abs.pkg_max_len, 0, (struct sockaddr *)&(addr.udp.addr), &len);
         if (ret == -1) {
@@ -719,7 +723,7 @@ static int vacc_host_send_data(vacc_host_t *vacc_host, void *buf, uint32_t len, 
     return ret;
 }
 
-static int vacc_host_recv_data(vacc_host_t *vacc_host)
+static int vacc_host_recv_data(vacc_host_t *vacc_host, uint8_t *buf, int buf_len)
 {
     int ret;
 
@@ -731,7 +735,7 @@ static int vacc_host_recv_data(vacc_host_t *vacc_host)
     case VACC_HOST_TRANSTYPE_TCP:
         /* fall through */
     case VACC_HOST_TRANSTYPE_UDS:
-        ret = vacc_host_recv_data_normal(vacc_host);
+        ret = vacc_host_recv_data_normal(vacc_host, buf, buf_len);
         break;
     case VACC_HOST_TRANSTYPE_UDP:
         ret = vacc_host_recv_data_udp(vacc_host);
@@ -774,7 +778,7 @@ int vacc_host_write_ex(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_hos
     }
 }
 
-int vacc_host_read(vacc_host_t *vacc_host)
+int vacc_host_read(vacc_host_t *vacc_host, uint8_t *buf, int buf_len)
 {
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
@@ -783,7 +787,7 @@ int vacc_host_read(vacc_host_t *vacc_host)
     case VACC_HOST_INSTTYPE_SERVER_INST:
         /* fall through */
     case VACC_HOST_INSTTYPE_CLIENT_INST:
-        return vacc_host_recv_data(vacc_host);
+        return vacc_host_recv_data(vacc_host, buf, buf_len);
         break;
     default:
         printf("invalid insttype %d\n", vacc_host->insttype);

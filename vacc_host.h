@@ -158,7 +158,7 @@ int vacc_host_create(vacc_host_t *vacc_host, const vacc_host_create_param_t *par
 int vacc_host_destroy(vacc_host_t *vacc_host);
 int vacc_host_write(vacc_host_t *vacc_host, void *buf, uint32_t len);
 int vacc_host_write_ex(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_host_addr_u *addr);
-int vacc_host_read(vacc_host_t *vacc_host);
+int vacc_host_read(vacc_host_t *vacc_host, uint8_t *buf, int buf_len);
 
 /* vacc msg define */
 #define VACC_MSG_MAX_LEN                (64 * 1024)
