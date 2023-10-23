@@ -18,48 +18,12 @@
 #include <emmintrin.h>
 #include <immintrin.h>
 
-#include "util.h"
-#include "epoll_worker.h"
-#include "vacc_host.h"
-#include "testbench.h"
-
-#define RN_BUILD_BUG_ON(condition)          ((void)sizeof(char[1 - 2*!!(condition)]))
-
-#define RN_RETVALUE_OK                      0
-#define RN_RETVALUE_ERR                     -1
-#define RN_RETVALUE_SYSCALL_FAILD           -2
-#define RN_RETVALUE_INVALID_PARAM           -3
-#define RN_RETVALUE_NO_SUCH_BUNDLE          -4
-#define RN_RETVALUE_NO_SUCH_SESSION         -5
-#define RN_RETVALUE_NO_SUCH_TRANSPORT       -6
-#define RN_RETVALUE_NOENOUGHRES             -7
-#define RN_RETVALUE_NOTALIGN                -8
-#define RN_RETVALUE_SESSION_NOT_READY       -9
-#define RN_RETVALUE_TIMER_NOT_READY         -10
-#define RN_RETVALUE_NOENOUGHSPACE           -11
-#define RN_RETVALUE_PKT_INCOMPLETE          -12
-#define RN_RETVALUE_PROTO_ERR               -13
-#define RN_RETVALUE_SESSION_CREATE_FAILD    -14
-#define RN_RETVALUE_CHALLENGE_NOT_MATCH     -15
-#define RN_RETVALUE_BUNDLE_NOT_BUILD        -16
-#define RN_RETVALUE_NOPKT_NEED_PROC         -17
-
-#define rn_assert(cond)    do{ \
-    if (!(cond)) { \
-        rn_printf("%-24s %4d Assert! `" #cond "'\n", __FUNCTION__, __LINE__); \
-        while (1) {sleep(1000);} \
-    } \
-} while (0)
-
-#define rn_log(fmt, args...) do { \
-        rn_printf("[LOG] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
-    } while(0)
-#define rn_warn(fmt, args...) do { \
-        rn_printf("[WARN] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
-    } while(0)
-#define rn_err(fmt, args...) do { \
-        rn_printf("[ERR] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
-    } while(0)
+#define RN_CONFIG_PKB_SIZE                  (4 * 1024)
+#define RN_CONFIG_MAX_PKB_NUM               (4096)
+#define RN_CONFIG_TOKEN_FILL_CYCLE_MS       1
+#define RN_CONFIG_SOCKET_BUF_SIZE           (32 * 1024)
+#define RN_CONFIG_MAX_TUNNEL_TRANSPORT      64
+#define RN_CONFIG_MAX_AGENT_CONN            256
 
 #define RN_WORKMODE_SERVER                  1
 #define RN_WORKMODE_CLIENT                  2
@@ -69,6 +33,22 @@
 #define RN_AES_ENCDEC_DATALEN               16
 #define RN_AES_KEY_LEN                      RN_AES_ENCDEC_DATALEN
 #define RN_TRANSPORT_DEFAULT_SEND_BPS       (10000)
+
+typedef int rn_transport_id;
+#define RN_TRANSPORT_ID_INVALID             ((rn_transport_id)(-1))
+
+typedef int rn_bundle_id;
+#define RN_BUNDLE_ID_INVALID                ((rn_bundle_id)(-1))
+
+typedef int rn_local_agent_conn_id;
+#define RN_AGENT_CONN_ID_INVALID            ((rn_local_agent_conn_id)(-1))
+
+#include "vacc_host.h"
+#include "util.h"
+#include "epoll_worker.h"
+#include "tunnel.h"
+#include "local_agent.h"
+#include "testbench.h"
 
 typedef struct {
     volatile int    running;
@@ -88,6 +68,14 @@ typedef struct {
     int             local_agent_port_list[RN_MAX_LOCAL_AGENT_PORT];
 
     uint8_t         default_key[RN_AES_KEY_LEN];
+
+    rn_pkb_pool_t   *pkb_pool;
+    rn_epoll_thread_t   epoll_thread;
+    int             transport_polling_timer_id;
+
+    //
+    rn_tunnel_t         *tunnel;
+    rn_local_agent_t    *local_agent;
 } running_ctx_t;
 
 #endif

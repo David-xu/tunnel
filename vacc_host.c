@@ -295,7 +295,9 @@ static int vacc_host_send_data_normal(vacc_host_t *vacc_host, void *buf, uint32_
         return VACC_HOST_RET_INVALID_INST;
     }
 
+#ifdef VACC_HOST_SEND_TO_COMPLETE
 __send_more:
+#endif
     memset(&msgh, 0, sizeof(msgh));
     iov.iov_base = buf + already_send;
     iov.iov_len = len - already_send;
@@ -319,6 +321,7 @@ retry:
     }
     already_send += ret;
 
+#ifdef VACC_HOST_SEND_TO_COMPLETE
     if (already_send < len) {
         printf("##############  sendmsg() return %d already_send %d len %d\n", ret, already_send, len);
         goto __send_more;
@@ -327,8 +330,9 @@ retry:
     if (already_send != len) {
         printf("##############  err already_send %d != len %d\n", already_send, len);
     }
+#endif
 
-    return VACC_HOST_RET_OK;
+    return already_send;
 }
 
 static int vacc_host_send_data_udp(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_host_addr_u *addr)

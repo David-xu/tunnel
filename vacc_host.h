@@ -17,6 +17,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+// #define VACC_HOST_SEND_TO_COMPLETE
+
 /* epoll helper */
 int helper_epoll_create(void);
 int helper_epoll_add(int epoll_fd, int fd, void *data);

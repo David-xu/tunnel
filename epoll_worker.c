@@ -100,6 +100,7 @@ static int rn_epoll_thread_reg_inst_ex(rn_epoll_thread_t *epoll_thread, rn_epoll
 
     rn_listadd_tail(&(epoll_inst->node), &(epoll_thread->inst_list_head));
     epoll_thread->n_inst++;
+
     return RN_RETVALUE_OK;
 }
 
@@ -217,7 +218,7 @@ int rn_timerfw_add_timer(rn_epoll_thread_t *ctx, uint64_t first_us, uint64_t int
     return i;
 }
 
-int fgfw_timerfw_del_timer(rn_epoll_thread_t *ctx, int idx)
+int rn_timerfw_del_timer(rn_epoll_thread_t *ctx, int idx)
 {
     rn_timerfw_timer_t *timer_inst = &(ctx->timer_list[idx]);
 
@@ -234,6 +235,8 @@ int fgfw_timerfw_del_timer(rn_epoll_thread_t *ctx, int idx)
     close(timer_inst->timer_fd);
     timer_inst->valid = 0;
     memset(timer_inst, 0, sizeof(rn_timerfw_timer_t));
+
+    ctx->n_timer--;
 
     return RN_RETVALUE_OK;
 }

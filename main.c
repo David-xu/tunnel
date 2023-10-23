@@ -77,14 +77,76 @@ static void setup_signal_handling(void)
 	sigaction(SIGPIPE, &actpipe, NULL);
 }
 
+static int tb_insert_timer_1ms(void *param)
+{
+    running_ctx_t *ctx = (running_ctx_t *)param;
+
+    rn_tunnel_transport_polling_all(ctx->tunnel, RN_CONFIG_TOKEN_FILL_CYCLE_MS);
+
+    return 0;
+}
+
 int do_server(running_ctx_t *ctx)
 {
-    return 0;
+    int i, ret;
+    /* create tunnel */
+    ctx->tunnel = rn_tunnel_create(&(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_TUNNEL_TRANSPORT, ctx->default_key, ctx->transport_send_bps);
+    /* create all listener */
+    for (i = 0; i < ctx->n_port; i++) {
+        ret = rn_socket_mngr_listen_add(&(ctx->tunnel->socket_mngr), ctx->serv_ip, ctx->port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
+        if (ret != RN_RETVALUE_OK) {
+            rn_err("create listen socket %s %d faild.\n", ctx->serv_ip, ctx->port_list[i]);
+            return ret;
+        }
+    }
+
+    /* create local_agent, no need to set port_agent_offset */
+    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN, -1);
+
+    return RN_RETVALUE_OK;
 }
 
 int do_client(running_ctx_t *ctx)
 {
-    return 0;
+    int i, ret;
+    rn_socket_public_t *p, *n;
+    rn_transport_t *transport;
+    rn_bundle_id client_bundle_id;
+    rn_pkb_t *pkb;
+
+    /* create tunnel */
+    ctx->tunnel = rn_tunnel_create(&(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_TUNNEL_TRANSPORT, ctx->default_key, ctx->transport_send_bps);
+    /* connect to server's transport socket */
+    for (i = 0; i < ctx->n_port; i++) {
+        /* connect */
+        ret = rn_socket_mngr_connet(&(ctx->tunnel->socket_mngr), ctx->serv_ip, ctx->port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
+        if (ret != RN_RETVALUE_OK) {
+            rn_err("connect to %s %d faild.\n", ctx->serv_ip, ctx->port_list[i]);
+            return ret;
+        }
+    }
+    /* bundle create */
+    client_bundle_id = rn_tunnel_bundle_new(ctx->tunnel, NULL, NULL, 0);
+    rn_assert(client_bundle_id == 0);
+    /* all transport need to do 'bundle join' */
+    rn_assert(ctx->tunnel->socket_mngr.n_client_inst == ctx->n_port);
+    RN_LISTENTRYWALK_SAVE(p, n, &(ctx->tunnel->socket_mngr.client_inst_list), list_entry) {
+        rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_CLIENT_INST);
+        transport = RN_GETCONTAINER(p, rn_transport_t, socket);
+        pkb = rn_pkb_pool_get_pkb(ctx->pkb_pool);
+        rn_assert(pkb != NULL);
+        ret = tunnel_proc_send_bundle_join(ctx->tunnel, transport, pkb, NULL, getpid());
+        rn_assert(ret == RN_RETVALUE_OK);
+    }
+
+    /* create local_agent */
+    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN, ctx->port_agent_offset);
+    /* create all listener */
+    for (i = 0; i < ctx->n_local_agent_port; i++) {
+        rn_socket_mngr_listen_add(&(ctx->local_agent->socket_mngr), "127.0.01", ctx->local_agent_port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
+    }
+
+    return RN_RETVALUE_OK;
 }
 
 static void cmd_loop(void)
@@ -114,13 +176,13 @@ static void cmd_loop(void)
             } else if (memcmp(argv[0], "-q", 2) == 0) {
                 g_ctx.running = 0;
             }
-        } 
+        }
     }
 }
 
 int main(int argc, char *argv[])
 {
-    int cmdtype, longp_idx, i, testbench = 0, testbench_mode = 0;
+    int ret, cmdtype, longp_idx, i, testbench = 0, testbench_mode = 0;
     uint64_t len;
 
     /* set default key */
@@ -235,36 +297,63 @@ int main(int argc, char *argv[])
     }
     rn_log("transport_send_bps: %d\n", g_ctx.transport_send_bps);
     rn_log("port_agent_offset: %d\n", g_ctx.port_agent_offset);
-    
+
     srand(time(0));
 
     if (testbench) {
-        if (g_ctx.n_local_agent_port == 0) {
-            rn_log("need set --local_agent_port_list\n");
-            return 0;
+        if ((g_ctx.mode == RN_WORKMODE_SERVER) || (g_ctx.mode == RN_WORKMODE_CLIENT)) {
+            if (g_ctx.n_local_agent_port == 0) {
+                rn_log("need set --local_agent_port_list\n");
+                return 0;
+            }
+
+            return do_testbench(g_ctx.mode, testbench_mode, g_ctx.n_local_agent_port, g_ctx.local_agent_port_list, len);
+        } else {
+            return do_ut();
         }
-        
-        return do_testbench(g_ctx.mode, testbench_mode, g_ctx.local_agent_port_list, len);
     }
 
     setup_signal_handling();
 
+    /* create epoll_thread */
+    rn_assert(rn_epoll_thread_create(&(g_ctx.epoll_thread)) == RN_RETVALUE_OK);
+    /* create global pkb pool */
+    g_ctx.pkb_pool = rn_pkb_pool_create(RN_CONFIG_MAX_PKB_NUM, RN_CONFIG_PKB_SIZE);
+    rn_assert(g_ctx.pkb_pool != NULL);
+
     switch (g_ctx.mode) {
     case RN_WORKMODE_SERVER:
-        do_server(&g_ctx);
+        ret = do_server(&g_ctx);
         break;
     case RN_WORKMODE_CLIENT:
-        do_client(&g_ctx);
+        ret = do_client(&g_ctx);
         break;
     default:
         rottenut_usage(argv[0]);
         return 0;
     }
+    if (ret) {
+        return 0;
+    }
+
+    g_ctx.transport_polling_timer_id = rn_timerfw_add_timer(&(g_ctx.epoll_thread), 1000, RN_CONFIG_TOKEN_FILL_CYCLE_MS * 1000, tb_insert_timer_1ms, &g_ctx);
+    rn_assert(g_ctx.transport_polling_timer_id >= 0);
 
     g_ctx.running = 1;
     while (g_ctx.running) {
         cmd_loop();
     }
+
+    rn_local_agent_destroy(g_ctx.local_agent);
+    rn_tunnel_destroy(g_ctx.tunnel);
+
+    rn_timerfw_del_timer(&(g_ctx.epoll_thread), g_ctx.transport_polling_timer_id);
+    rn_assert(g_ctx.epoll_thread.n_inst == 0);
+    rn_assert(g_ctx.epoll_thread.n_timer == 0);
+    rn_epoll_thread_destroy(&(g_ctx.epoll_thread));
+
+    rn_assert(RN_GPFIFO_ISFULL(g_ctx.pkb_pool->free_pkt_fifo));
+    rn_pkb_pool_destroy(g_ctx.pkb_pool);
 
     rn_log("exit...\n");
 

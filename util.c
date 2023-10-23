@@ -490,3 +490,453 @@ int rn_bitmap_query_specified(rn_bitmap_t *bm, uint32_t specified_id)
 
     return 1;
 }
+
+rn_gpfifo_t * rn_gpfifo_create(uint32_t depth, uint32_t element_size)
+{
+    rn_gpfifo_t *ret;
+    uint32_t space_size = sizeof(rn_gpfifo_t) + depth * element_size;
+
+    rn_assert(depth != 0);
+    rn_assert((depth & (depth - 1)) == 0);
+    rn_assert(element_size != 0);
+
+    ret = malloc(space_size);
+    rn_assert(ret != NULL);
+
+    memset(ret, 0, sizeof(rn_gpfifo_t));
+
+    ret->depth = depth;
+    ret->element_size = element_size;
+
+    return ret;
+}
+
+int rn_gpfifo_destroy(rn_gpfifo_t *gpfifo)
+{
+    free(gpfifo);
+
+    return RN_RETVALUE_OK;
+}
+
+rn_pkb_pool_t * rn_pkb_pool_create(uint32_t total_pkb_num, uint32_t bufsize)
+{
+    rn_pkb_pool_t *pkb_pool;
+    rn_pkb_t *pkb;
+    uint32_t one_pkb_size = (sizeof(rn_pkb_t) + bufsize);
+    uint32_t space_size = sizeof(rn_pkb_pool_t) + total_pkb_num * one_pkb_size;
+    uint32_t i;
+
+    pkb_pool = malloc(space_size);
+    pkb_pool->total_pkb_num = total_pkb_num;
+    pkb_pool->bufsize = bufsize;
+
+    pkb_pool->free_pkt_fifo = rn_gpfifo_create(total_pkb_num, sizeof(rn_pkb_t *));
+
+    for (i = 0; i < total_pkb_num; i++) {
+        pkb = (void *)(pkb_pool + 1) + i * one_pkb_size;
+        memset(pkb, 0, sizeof(rn_pkb_t));
+        pkb->pkb_flag = PN_PKB_FLAG_ALREADY_FREE;
+        pkb->bufhead = pkb + 1;
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+        pkb->pkb_pool = pkb_pool;
+        pkb->idx = i;
+#endif
+        pkb->bufsize = bufsize;
+        pkb->cur_off = RN_PKB_OVERHEAD;
+
+        /* insert info free fifo */
+        rn_gpfifo_enqueue_p(pkb_pool->free_pkt_fifo, pkb);
+    }
+
+    return pkb_pool;
+}
+
+int rn_pkb_pool_destroy(rn_pkb_pool_t *pkb_pool)
+{
+    rn_assert(pkb_pool != NULL);
+
+    rn_gpfifo_destroy(pkb_pool->free_pkt_fifo);
+
+    free(pkb_pool);
+
+    return RN_RETVALUE_OK;
+}
+
+rn_pkb_t *rn_pkb_pool_get_pkb(rn_pkb_pool_t *pkb_pool)
+{
+    rn_pkb_t *pkb = rn_gpfifo_dequeue_p(pkb_pool->free_pkt_fifo);
+
+    if (pkb == NULL) {
+        return NULL;
+    }
+
+    rn_assert(pkb->bufsize == pkb_pool->bufsize);
+
+    pkb->pkb_flag &= ~PN_PKB_FLAG_ALREADY_FREE;
+    pkb->cur_off = RN_PKB_OVERHEAD;
+    pkb->cur_len = 0;
+
+    return pkb;
+}
+
+int rn_pkb_pool_put_pkb(rn_pkb_pool_t *pkb_pool, rn_pkb_t *pkb)
+{
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+    uint32_t one_pkb_size = (sizeof(rn_pkb_t) + pkb_pool->bufsize);
+    uint32_t idx = (RN_P2V(pkb) - RN_P2V(pkb_pool + 1)) / one_pkb_size;
+    rn_assert(pkb->pkb_pool == pkb_pool);
+    rn_assert(idx < pkb_pool->total_pkb_num);
+    rn_assert(idx == pkb->idx);
+#endif
+
+    rn_assert((pkb->pkb_flag & PN_PKB_FLAG_ALREADY_FREE) == 0);
+
+    pkb->pkb_flag |= PN_PKB_FLAG_ALREADY_FREE;
+
+    return rn_gpfifo_enqueue_p(pkb_pool->free_pkt_fifo, pkb);
+}
+
+int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, vacc_host_t *vacc_host)
+{
+    int left = RN_PKB_LEFTSPACE(pkb);
+    if (left < recv_len) {
+        return RN_RETVALUE_NOENOUGHSPACE;
+    }
+
+    /* do recv */
+    recv_len = vacc_host_read(vacc_host, RN_PKB_TAIL(pkb), recv_len);
+
+    if (recv_len >= 0) {
+        pkb->cur_len += recv_len;
+    }
+
+    return recv_len;
+}
+
+int rn_pkb_send(rn_pkb_t *pkb, int send_len, vacc_host_t *vacc_host)
+{
+    int left = RN_PKB_LEFTSPACE(pkb);
+    if (left < send_len) {
+        return RN_RETVALUE_NOENOUGHSPACE;
+    }
+
+    rn_assert(pkb->cur_len != 0);
+
+    send_len = vacc_host_write(vacc_host, RN_PKB_HEAD(pkb), send_len);
+    if (send_len >= 0) {
+        /* real send send_len bytes */
+        rn_assert((uint32_t)send_len <= pkb->cur_len);
+        pkb->cur_off += send_len;
+        pkb->cur_len -= send_len;
+    }
+
+    return send_len;
+}
+
+int rn_socket_mngr_create(rn_socket_mngr_t *mngr, rn_socket_public_t *socket_list, uint32_t unit_num, uint32_t unit_size, rn_socket_init_cb socket_init, rn_socket_uninit_cb socket_uninit, void *cb_param)
+{
+    rn_socket_public_t *socket;
+    uint32_t i;
+
+    rn_assert(unit_size >= sizeof(rn_socket_public_t));
+    rn_assert(mngr != NULL);
+
+    memset(mngr, 0, sizeof(rn_socket_mngr_t));
+    mngr->unit_num = unit_num;
+    mngr->unit_size = unit_size;
+    mngr->free_fifo = rn_gpfifo_create(unit_num, sizeof(rn_socket_public_t *));
+    mngr->socket_list = socket_list;
+    mngr->socket_init = socket_init;
+    mngr->socket_uninit = socket_uninit;
+    mngr->cb_param = cb_param;
+    rn_initlisthead(&(mngr->listen_list));
+    rn_initlisthead(&(mngr->srv_inst_list));
+    rn_initlisthead(&(mngr->client_inst_list));
+
+    rn_assert(mngr->free_fifo != NULL);
+
+    for (i = 0; i < unit_num; i++) {
+        socket = RN_SOCKET_ENTRY(mngr, i);
+        socket->conn_id = i;
+        rn_gpfifo_enqueue_p(mngr->free_fifo, socket);
+    }
+
+    return RN_RETVALUE_OK;
+}
+
+int rn_socket_mngr_destroy(rn_socket_mngr_t *mngr)
+{
+    rn_socket_public_t *p, *n;
+
+    /* close all connected socket */
+    RN_LISTENTRYWALK_SAVE(p, n, &(mngr->client_inst_list), list_entry) {
+        vacc_host_destroy(&(p->vacc_host));
+    }
+    RN_LISTENTRYWALK_SAVE(p, n, &(mngr->srv_inst_list), list_entry) {
+        vacc_host_destroy(&(p->vacc_host));
+    }
+    /* close all listen socket */
+    RN_LISTENTRYWALK_SAVE(p, n, &(mngr->listen_list), list_entry) {
+        vacc_host_destroy(&(p->vacc_host));
+    }
+
+    return rn_gpfifo_destroy(mngr->free_fifo);;
+}
+
+static vacc_host_t* rn_socket_mngr_get(struct _vacc_host *vacc_host, void *opaque)
+{
+    rn_socket_mngr_t *mngr = (rn_socket_mngr_t *)opaque;
+    rn_socket_public_t *socket, *listen_socket = NULL;
+
+    if (vacc_host) {
+        listen_socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+    }
+
+    socket = rn_gpfifo_dequeue_p(mngr->free_fifo);
+    if (socket == NULL) {
+        return NULL;
+    }
+
+    rn_initlisthead(&(socket->list_entry));
+
+    if (listen_socket) {
+        socket->listen_port = listen_socket->listen_port;
+    }
+
+    return &(socket->vacc_host);
+}
+
+static void rn_socket_mngr_put(struct _vacc_host *vacc_host, void *opaque)
+{
+    rn_socket_mngr_t *mngr = (rn_socket_mngr_t *)opaque;
+    rn_socket_public_t *socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+
+    rn_assert(rn_gpfifo_enqueue_p(mngr->free_fifo, socket) == RN_RETVALUE_OK);
+}
+
+static int rn_socket_mngr_init(struct _vacc_host *vacc_host, void *opaque)
+{
+    rn_socket_mngr_t *mngr = (rn_socket_mngr_t *)opaque;
+    rn_socket_public_t *socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+
+    switch (vacc_host->insttype) {
+    case VACC_HOST_INSTTYPE_SERVER_LISTENER:
+        rn_log("%s listen socket init, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+
+        rn_listadd_tail(&(socket->list_entry), &(mngr->listen_list));
+        mngr->n_listen++;
+        break;
+    case VACC_HOST_INSTTYPE_SERVER_INST:
+        rn_log("%s server inst connect, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+        if (vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP) {
+            struct in_addr in = vacc_host->u.tcp.cli_addr.sin_addr;
+            char ipstr[INET_ADDRSTRLEN];
+            unsigned short port;
+            port = ntohs(vacc_host->u.tcp.cli_addr.sin_port);
+            inet_ntop(AF_INET, &in, ipstr, sizeof(ipstr));
+            rn_log("\t\tclient: %s(%d)\n", ipstr, port);
+        } else if (vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS) {
+
+        }
+
+        rn_listadd_tail(&(socket->list_entry), &(mngr->srv_inst_list));
+        mngr->n_srv_inst++;
+        break;
+    case VACC_HOST_INSTTYPE_CLIENT_INST:
+        rn_log("%s client inst connect, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+
+        rn_listadd_tail(&(socket->list_entry), &(mngr->client_inst_list));
+        mngr->n_client_inst++;
+        break;
+    default:
+        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        return -1;
+    }
+
+    if (mngr->socket_init) {
+        mngr->socket_init(mngr, socket, mngr->cb_param);
+    }
+
+    return 0;
+}
+
+static int rn_socket_mngr_uninit(struct _vacc_host *vacc_host, void *opaque)
+{
+    rn_socket_mngr_t *mngr = (rn_socket_mngr_t *)opaque;
+    rn_socket_public_t *socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+
+    if (mngr->socket_uninit) {
+        mngr->socket_uninit(mngr, socket, mngr->cb_param);
+    }
+
+    /* remove from list */
+    rn_listdel(&(socket->list_entry));
+
+    switch (vacc_host->insttype) {
+    case VACC_HOST_INSTTYPE_SERVER_LISTENER:
+        rn_log("%s listen socket uninit, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+        mngr->n_listen--;
+        break;
+    case VACC_HOST_INSTTYPE_SERVER_INST:
+        rn_log("%s server inst disconnect, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+        mngr->n_srv_inst--;
+        break;
+    case VACC_HOST_INSTTYPE_CLIENT_INST:
+        rn_log("%s client inst disconnect, conn_id %d\n",
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
+            vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
+            "UNKNOWN",
+            socket->conn_id);
+        mngr->n_client_inst--;
+        break;
+    default:
+        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize)
+{
+    rn_socket_public_t *socket;
+    vacc_host_t *vacc_host;
+    vacc_host_create_param_t param;
+    int ret;
+
+    vacc_host = rn_socket_mngr_get(NULL, mngr);
+    if (vacc_host == NULL) {
+        return RN_RETVALUE_NOENOUGHRES;
+    }
+
+    /* bind to ip:port */
+    memset(&param, 0, sizeof(param));
+    param.transtype = VACC_HOST_TRANSTYPE_TCP;
+    param.insttype = VACC_HOST_INSTTYPE_SERVER_LISTENER;
+    param.cb_get = rn_socket_mngr_get;
+    param.cb_put = rn_socket_mngr_put;
+    param.cb_init = rn_socket_mngr_init;
+    param.cb_uninit = rn_socket_mngr_uninit;
+    param.proto_abs.enable = 0;
+    param.sendbuf_size = sock_bufsize;
+    param.recvbuf_size = sock_bufsize;
+    param.opaque = mngr;
+    strncpy(param.u.tcp.srv_ip, ip, sizeof(param.u.tcp.srv_ip));
+    param.u.tcp.srv_port = port;
+
+    ret = vacc_host_create(vacc_host, &param);
+    if (ret != VACC_HOST_RET_OK) {
+        rn_log("vacc_host_create() return %d\n", ret);
+        rn_socket_mngr_put(vacc_host, mngr);
+        return RN_RETVALUE_SOCKET_CONNECT_ERR;
+    }
+
+    socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+    socket->listen_port = port;
+
+    return RN_RETVALUE_OK;
+}
+
+int rn_socket_mngr_connet(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize)
+{
+    rn_socket_public_t *socket;
+    vacc_host_t *vacc_host;
+    vacc_host_create_param_t param;
+    int ret;
+
+    vacc_host = rn_socket_mngr_get(NULL, mngr);
+    if (vacc_host == NULL) {
+        return RN_RETVALUE_NOENOUGHRES;
+    }
+
+    /* connect to ip:port */
+    memset(&param, 0, sizeof(param));
+    param.transtype = VACC_HOST_TRANSTYPE_TCP;
+    param.insttype = VACC_HOST_INSTTYPE_CLIENT_INST;
+    param.cb_get = rn_socket_mngr_get;
+    param.cb_put = rn_socket_mngr_put;
+    param.cb_init = rn_socket_mngr_init;
+    param.cb_uninit = rn_socket_mngr_uninit;
+    param.proto_abs.enable = 0;
+    param.sendbuf_size = sock_bufsize;
+    param.recvbuf_size = sock_bufsize;
+    param.opaque = mngr;
+    strncpy(param.u.tcp.srv_ip, ip, sizeof(param.u.tcp.srv_ip));
+    param.u.tcp.srv_port = port;
+
+    ret = vacc_host_create(vacc_host, &param);
+    if (ret != VACC_HOST_RET_OK) {
+        rn_log("vacc_host_create() return %d\n", ret);
+        rn_socket_mngr_put(vacc_host, mngr);
+        return RN_RETVALUE_SOCKET_CONNECT_ERR;
+    }
+
+    socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+    socket->connect_port = port;
+
+    return RN_RETVALUE_OK;
+}
+
+void rn_socket_mngr_dump(rn_socket_mngr_t *mngr)
+{
+    rn_socket_public_t *p, *n;
+
+    rn_log("n_listen %d, n_srv_inst %d, n_client_inst %d, n_free %d\n",
+        mngr->n_listen, mngr->n_srv_inst, mngr->n_client_inst, RN_GPFIFO_CUR_LEN(mngr->free_fifo));
+    rn_assert((mngr->n_listen + mngr->n_srv_inst + mngr->n_client_inst + RN_GPFIFO_CUR_LEN(mngr->free_fifo)) == mngr->unit_num);
+
+    /* listen list: */
+    if (mngr->n_listen) {
+        rn_log("\tlisten list:");
+        RN_LISTENTRYWALK_SAVE(p, n, &(mngr->listen_list), list_entry) {
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
+            rn_log("\t\t listen port %d\n", p->listen_port);
+        }
+    }
+    /* server inst list: */
+    if (mngr->n_srv_inst) {
+        rn_log("\tserver inst:");
+        RN_LISTENTRYWALK_SAVE(p, n, &(mngr->srv_inst_list), list_entry) {
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
+            rn_log("\t\tlisten port %d\n", p->listen_port);
+        }
+    }
+    /* client inst list: */
+    if (mngr->n_client_inst) {
+        rn_log("\tclient inst:");
+        RN_LISTENTRYWALK_SAVE(p, n, &(mngr->client_inst_list), list_entry) {
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
+            rn_log("\t\tconnect port %d\n", p->connect_port);
+        }
+    }
+
+}
+
+

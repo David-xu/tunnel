@@ -367,13 +367,126 @@ static int testbench_client(int port, uint64_t send_len)
     return 0;
 }
 
-int do_testbench(int mode, int testmode, int port[], uint64_t send_len)
+int do_testbench(int mode, int testmode, int n_port, int port[], uint64_t send_len)
 {
     if (mode == RN_WORKMODE_SERVER) {
         testbench_server(port[0]);
     } else if (mode == RN_WORKMODE_CLIENT) {
         testbench_client(port[0], send_len);
     }
+
+    return 0;
+}
+
+static int case_00(void)
+{
+    /* aes cipher */
+    unsigned char key[16] = "0123456789abcdef";
+    unsigned char plaintext[16] = "hello, world!";
+    unsigned char ciphertext[16] = {0};
+    AES_KEY aes_key;
+
+    memcpy(ciphertext, plaintext, sizeof(plaintext));
+
+    AES_set_encrypt_key(key, 128, &aes_key);
+    AES_ecb_encrypt(ciphertext, ciphertext, &aes_key, AES_ENCRYPT);
+
+    AES_set_decrypt_key(key, 128, &aes_key);
+    AES_ecb_encrypt(ciphertext, ciphertext, &aes_key, AES_DECRYPT);
+
+    if (memcmp(ciphertext, plaintext, sizeof(plaintext))) {
+        return -1;
+    }
+
+    return 0;
+}
+#if 0
+typedef struct {
+    rn_socket_mngr_t        socket_mngr;
+    rn_socket_public_t      sock_list[8];
+    rn_epoll_inst_t         epoll_inst[8];
+    rn_epoll_thread_t       epoll_thread;
+} ut_case_01_param_t;
+
+static int case_01_timer_cb(void *param)
+{
+
+}
+
+static void rn_transport_listener_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
+{
+    rn_transport_t *transport = RN_GETCONTAINER(epoll_inst, rn_transport_t, epoll_inst);
+
+    vacc_host_read(&(transport->socket.vacc_host), NULL, 0);
+}
+
+static void rn_transport_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
+{
+
+}
+
+static int case_01_sock_init(rn_socket_mngr_t *mngr, rn_socket_public_t *socket, void *cb_param)
+{
+    ut_case_01_param_t *param = (ut_case_01_param_t *)cb_param;
+    uint32_t idx = socket->conn_id;
+
+    /* add into epoll thread main loop */
+    transport->epoll_inst.epoll_inst_cb = rn_transport_listener_epoll_inst_cb;
+    transport->epoll_inst.fd = socket->vacc_host.sock_fd;
+    ret = rn_epoll_thread_reg_inst(tunnel->epoll_thread, &(transport->epoll_inst));
+    if (ret != RN_RETVALUE_OK) {
+        /* todo: */
+        rn_assert(0);
+    }
+
+    return 0;
+}
+
+static int case_01_sock_uninit(rn_socket_mngr_t *mngr, rn_socket_public_t *socket, void *cb_param)
+{
+    return 0;
+}
+
+static int case_01(void)
+{
+    ut_case_01_param_t param;
+    int ret;
+
+    rn_assert(rn_epoll_thread_create(&(param.epoll_thread)) == RN_RETVALUE_OK);
+
+    /*  */
+    ret = rn_socket_mngr_create(&param.socket_mngr, param.sock_list, RN_ARRAY_SIZE(param.sock_list), sizeof(rn_socket_public_t),
+        case_01_sock_init, case_01_sock_uninit, &param);
+    if (ret != RN_RETVALUE_OK) {
+        return -1;
+    }
+
+    rn_timerfw_add_timer(&(param.epoll_thread), 100, 1000000, case_01_timer_cb, &param);
+    rn_socket_mngr_listen_add(&param.socket_mngr, "127.0.0.1", 40000, 64 * 1024);
+    rn_socket_mngr_connet(&param.socket_mngr, "127.0.0.1", 40000, 64 * 1024);
+
+
+
+    return 0;
+}
+#endif
+typedef int (*test_case_fn)(void);
+static test_case_fn g_test_case_list[] = {
+    case_00,
+    // case_01,
+};
+
+int do_ut(void)
+{
+    uint32_t i;
+    for (i = 0; i < sizeof(g_test_case_list) / sizeof(g_test_case_list[0]); i++) {
+        if (g_test_case_list[i]()) {
+            printf("test case %d faild\n", i);
+            return -1;
+        }
+    }
+
+    printf("all case (total %d) pass.\n", i);
 
     return 0;
 }
