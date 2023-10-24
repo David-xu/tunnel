@@ -437,7 +437,7 @@ typedef struct _rn_socket_mngr {
 int rn_socket_mngr_create(rn_socket_mngr_t *mngr, rn_socket_public_t *socket_list, uint32_t unit_num, uint32_t unit_size, rn_socket_init_cb socket_init, rn_socket_uninit_cb socket_uninit, void *cb_param);
 int rn_socket_mngr_destroy(rn_socket_mngr_t *mngr);
 int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize);
-int rn_socket_mngr_connet(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize);
+int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket);
 void rn_socket_mngr_dump(rn_socket_mngr_t *mngr);
 
 #endif

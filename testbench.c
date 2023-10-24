@@ -463,7 +463,7 @@ static int case_01(void)
 
     rn_timerfw_add_timer(&(param.epoll_thread), 100, 1000000, case_01_timer_cb, &param);
     rn_socket_mngr_listen_add(&param.socket_mngr, "127.0.0.1", 40000, 64 * 1024);
-    rn_socket_mngr_connet(&param.socket_mngr, "127.0.0.1", 40000, 64 * 1024);
+    rn_socket_mngr_connect(&param.socket_mngr, "127.0.0.1", 40000, 64 * 1024, NULL);
 
 
 

@@ -7,9 +7,12 @@
 #define RN_TRANSPORT_PROTOCOL_MAGIC                 0x57464746
 
 typedef enum {
-    RN_TRANSPORT_FRAME_TYPE_DATA = 1,
-    RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY,
-    RN_TRANSPORT_FRAME_TYPE_BUNDLE_JOIN,
+    RN_TRANSPORT_FRAME_TYPE_DATA = 1,                           /* without ack */
+    RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY,                         /* without ack */
+    RN_TRANSPORT_FRAME_TYPE_BUNDLE_JOIN,                        /* without ack */
+    RN_TRANSPORT_FRAME_TYPE_SESSION_NEW,
+    RN_TRANSPORT_FRAME_TYPE_SESSION_NEW_ACK,
+    RN_TRANSPORT_FRAME_TYPE_SESSION_DEL,                        /* without ack */
 } rn_transport_frame_type_e;
 
 typedef struct {
@@ -25,6 +28,23 @@ typedef struct {
     uint32_t        pid_at_cli;                                 /* client's pid */
 } rn_transport_frame_boundle_join_t;
 
+typedef struct {
+    uint32_t        port;
+    uint32_t        src_agent_conn_id;
+} rn_protocol_pkt_session_new_req_t;
+
+typedef struct {
+    int             ret;
+    uint32_t        src_agent_conn_id;                          /* produced server */
+    uint32_t        dst_agent_conn_id;                          /* origin agent_conn id in client */
+    uint32_t        source_challenge;                           /* should eq to challenge of req frame */
+} rn_protocol_pkt_session_new_resp_t;
+
+typedef struct {
+    uint32_t        src_agent_conn_id;                         /*  */
+    uint32_t        dst_agent_conn_id;                         /*  */
+} rn_protocol_pkt_session_del_req_t;
+
 typedef enum {
     RN_TRANSPORT_STATE_UNINIT = 0,
     RN_TRANSPORT_STATE_LISTENING,
@@ -33,7 +53,6 @@ typedef enum {
 } rn_transport_state_e;
 
 #define RN_CONFIG_TRANSPORT_FRAME_MAXLEN            (RN_CONFIG_PKB_SIZE)
-
 
 /*
  * bundle
@@ -48,6 +67,9 @@ typedef struct {
     char                                    ipstr_at_cli[INET_ADDRSTRLEN];
     char                                    ipstr_at_srv[INET_ADDRSTRLEN];
     uint32_t                                pid_at_cli;                     /* client's pid */
+
+    int                                     n_agent_conn;
+    rn_listhead_t                           agent_conn_list_head;
 
     uint32_t                                n_transport;
     rn_transport_id                         transport_list[RN_MAX_TRANSPORT_PER_BUNDLE];
@@ -99,10 +121,13 @@ typedef struct {
     } stat;
 } rn_transport_t;
 
+struct _rn_local_agent;
+
 typedef struct _rn_tunnel {
     rn_socket_mngr_t        socket_mngr;
     rn_epoll_thread_t       *epoll_thread;
     rn_pkb_pool_t           *pkb_pool;
+    struct _rn_local_agent  *local_agent;
 
     int                     n_bundle;
     rn_bundle_t             bundle_list[RN_CONFIG_TUNNEL_BUNDLE_MAX];
@@ -150,14 +175,36 @@ static inline void rn_transport_rx_enable_aes_128(rn_transport_t *transport, uin
     transport->aes_128_rx_enable = 1;
 }
 
-int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *pkb, rn_transport_frame_type_e type);
-int tunnel_proc_send_bundle_join(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *pkb, char src_ipstr[], uint32_t pid_at_cli);
+static inline rn_transport_t * rn_tunnel_get_transport(rn_tunnel_t *tunnel, rn_transport_id transport_id)
+{
+    rn_transport_t *transport;
+
+    rn_assert((transport_id >= 0) && (transport_id < tunnel->n_transport));
+
+    transport = &(tunnel->transport_pool[transport_id]);
+
+    rn_tunnel_transport_valid(transport);
+
+    return transport;
+}
+
+int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *pkb, rn_transport_frame_type_e type, uint32_t *challenge);
+int tunnel_proc_send_bundle_join(rn_tunnel_t *tunnel, rn_transport_t *transport, char src_ipstr[], uint32_t pid_at_cli);
+int tunnel_proc_send_session_new(rn_tunnel_t *tunnel, rn_transport_t *transport, uint32_t port, rn_local_agent_conn_id src_agent_conn_id, uint32_t *create_challenge);
+int tunnel_proc_send_session_new_ack(rn_tunnel_t *tunnel, rn_transport_t *transport, int ret, uint32_t src_agent_conn_id, uint32_t dst_agent_conn_id, uint32_t source_challenge);
+int tunnel_proc_send_session_del(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_local_agent_conn_id src_agent_conn_id, rn_local_agent_conn_id dst_agent_conn_id);
 
 int rn_tunnel_transport_polling_all(rn_tunnel_t *tunnel, int cycle_ms);
 
+rn_transport_id rn_tunnel_bundle_transport_select(rn_tunnel_t *tunnel, rn_bundle_id bundle_id);
 int rn_tunnel_bundle_find_transport(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, rn_transport_id transport_id);
 int rn_tunnel_bundle_insert_transport(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, rn_transport_id transport_id);
 int rn_tunnel_bundle_remove_transport(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, rn_transport_id transport_id);
+struct _rn_local_agent_conn_t;
+int rn_tunnel_bundle_local_agent_conn_inbundle(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, struct _rn_local_agent_conn_t *agent_conn);
+int rn_tunnel_bundle_remote_agent_conn_inbundle(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, rn_local_agent_conn_id remote_agent_conn_id, rn_local_agent_conn_id *local_agent_conn_id);
+int rn_tunnel_bundle_attach_agent_conn(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, struct _rn_local_agent_conn_t *agent_conn);
+int rn_tunnel_bundle_detach_agent_conn(rn_tunnel_t *tunnel, rn_bundle_id bundle_id, struct _rn_local_agent_conn_t *agent_conn);
 rn_bundle_id rn_tunnel_bundle_find(rn_tunnel_t *tunnel, char *ipstr_at_cli, char *ipstr_at_srv, uint32_t pid_at_cli);
 rn_bundle_id rn_tunnel_bundle_new(rn_tunnel_t *tunnel, char *ipstr_at_cli, char *ipstr_at_srv, uint32_t pid_at_cli);
 void rn_tunnel_bundle_del(rn_tunnel_t *tunnel, rn_bundle_id bundle_id);

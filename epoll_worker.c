@@ -129,7 +129,8 @@ int rn_epoll_thread_reg_uninst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t 
         }
     }
     if (finded == 0) {
-        return RN_RETVALUE_ERR;
+        /* already removed */
+        return RN_RETVALUE_OK;
     }
 
     event.data.ptr = epoll_inst;

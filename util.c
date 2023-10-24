@@ -864,7 +864,7 @@ int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, u
     return RN_RETVALUE_OK;
 }
 
-int rn_socket_mngr_connet(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize)
+int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket)
 {
     rn_socket_public_t *socket;
     vacc_host_t *vacc_host;
@@ -900,6 +900,10 @@ int rn_socket_mngr_connet(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint3
 
     socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
     socket->connect_port = port;
+
+    if (connected_socket) {
+        *connected_socket = socket;
+    }
 
     return RN_RETVALUE_OK;
 }

@@ -103,6 +103,9 @@ int do_server(running_ctx_t *ctx)
     /* create local_agent, no need to set port_agent_offset */
     ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN, -1);
 
+    /* set local_agent in tunnel */
+    ctx->tunnel->local_agent = ctx->local_agent;
+
     return RN_RETVALUE_OK;
 }
 
@@ -112,14 +115,13 @@ int do_client(running_ctx_t *ctx)
     rn_socket_public_t *p, *n;
     rn_transport_t *transport;
     rn_bundle_id client_bundle_id;
-    rn_pkb_t *pkb;
 
     /* create tunnel */
     ctx->tunnel = rn_tunnel_create(&(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_TUNNEL_TRANSPORT, ctx->default_key, ctx->transport_send_bps);
     /* connect to server's transport socket */
     for (i = 0; i < ctx->n_port; i++) {
         /* connect */
-        ret = rn_socket_mngr_connet(&(ctx->tunnel->socket_mngr), ctx->serv_ip, ctx->port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
+        ret = rn_socket_mngr_connect(&(ctx->tunnel->socket_mngr), ctx->serv_ip, ctx->port_list[i], RN_CONFIG_SOCKET_BUF_SIZE, NULL);
         if (ret != RN_RETVALUE_OK) {
             rn_err("connect to %s %d faild.\n", ctx->serv_ip, ctx->port_list[i]);
             return ret;
@@ -132,11 +134,12 @@ int do_client(running_ctx_t *ctx)
     rn_assert(ctx->tunnel->socket_mngr.n_client_inst == ctx->n_port);
     RN_LISTENTRYWALK_SAVE(p, n, &(ctx->tunnel->socket_mngr.client_inst_list), list_entry) {
         rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_CLIENT_INST);
+        /* send msg */
         transport = RN_GETCONTAINER(p, rn_transport_t, socket);
-        pkb = rn_pkb_pool_get_pkb(ctx->pkb_pool);
-        rn_assert(pkb != NULL);
-        ret = tunnel_proc_send_bundle_join(ctx->tunnel, transport, pkb, NULL, getpid());
+        ret = tunnel_proc_send_bundle_join(ctx->tunnel, transport, NULL, getpid());
         rn_assert(ret == RN_RETVALUE_OK);
+        /* local transport join bundle */
+        rn_tunnel_bundle_insert_transport(ctx->tunnel, client_bundle_id, transport->transport_id);
     }
 
     /* create local_agent */
@@ -145,6 +148,9 @@ int do_client(running_ctx_t *ctx)
     for (i = 0; i < ctx->n_local_agent_port; i++) {
         rn_socket_mngr_listen_add(&(ctx->local_agent->socket_mngr), "127.0.01", ctx->local_agent_port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
     }
+
+    /* set local_agent in tunnel */
+    ctx->tunnel->local_agent = ctx->local_agent;
 
     return RN_RETVALUE_OK;
 }
@@ -344,10 +350,11 @@ int main(int argc, char *argv[])
         cmd_loop();
     }
 
+    rn_timerfw_del_timer(&(g_ctx.epoll_thread), g_ctx.transport_polling_timer_id);
+
     rn_local_agent_destroy(g_ctx.local_agent);
     rn_tunnel_destroy(g_ctx.tunnel);
 
-    rn_timerfw_del_timer(&(g_ctx.epoll_thread), g_ctx.transport_polling_timer_id);
     rn_assert(g_ctx.epoll_thread.n_inst == 0);
     rn_assert(g_ctx.epoll_thread.n_timer == 0);
     rn_epoll_thread_destroy(&(g_ctx.epoll_thread));
