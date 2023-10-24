@@ -16,6 +16,7 @@ typedef struct _rn_local_agent_conn_t {
     rn_local_agent_conn_id  local_agent_conn_id;
     struct _rn_local_agent  *local_agent;
     rn_gpfifo_t             *recv_fifo;             /*  */
+    rn_reorder_t            *session_pkt_reorder;   //
 
     /* need reset */
     rn_agent_conn_state_e   agent_conn_state;       /* after this element, should be reset */
@@ -26,6 +27,7 @@ typedef struct _rn_local_agent_conn_t {
     rn_bundle_id            bundle_id;              /*  */
     rn_listhead_t           bundle_link;            /* link to bundle */
 
+    uint64_t                session_data_idx;
     uint32_t                source_challenge;       /* save source challenge while session create */
 
     struct {
@@ -33,13 +35,16 @@ typedef struct _rn_local_agent_conn_t {
         uint64_t            recv_fifo_full;
         uint64_t            no_free_pkb;
 
-        uint64_t            send_pkt, send_bytes;
+        uint64_t            send_pkt, send_bytes, send_pkt_not_complete;
 
         uint64_t            vacc_send_err, vacc_recv_err;
+
+        uint64_t            dest_transport_send_fifo_full;
     } stat;
 } rn_local_agent_conn_t;
 
-#define RN_CONFIG_AGENT_CONN_RECV_FIFO_DEPTH        2
+#define RN_CONFIG_AGENT_CONN_RECV_FIFO_DEPTH        32
+#define RN_CONFIG_AGENT_CONN_SESSION_PKT_WINDOW     256
 
 /* this is used for connect to local */
 typedef struct _rn_local_agent {
@@ -81,6 +86,9 @@ static inline rn_local_agent_conn_t * rn_local_agent_get_conn(rn_local_agent_t *
 
     return agent_conn;
 }
+
+void rn_agent_conn_session_order_drain(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn);
+int rn_agent_conn_polling_all(rn_local_agent_t *local_agent, int cycle_ms);
 
 rn_local_agent_t * rn_local_agent_create(rn_tunnel_t *tunnel, rn_epoll_thread_t *epoll_thread, rn_pkb_pool_t *pkb_pool, uint32_t n_agent_conn, int port_agent_offset);
 int rn_local_agent_destroy(rn_local_agent_t *local_agent);

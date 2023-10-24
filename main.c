@@ -82,6 +82,7 @@ static int tb_insert_timer_1ms(void *param)
     running_ctx_t *ctx = (running_ctx_t *)param;
 
     rn_tunnel_transport_polling_all(ctx->tunnel, RN_CONFIG_TOKEN_FILL_CYCLE_MS);
+    rn_agent_conn_polling_all(ctx->local_agent, RN_CONFIG_TOKEN_FILL_CYCLE_MS);
 
     return 0;
 }
@@ -101,7 +102,7 @@ int do_server(running_ctx_t *ctx)
     }
 
     /* create local_agent, no need to set port_agent_offset */
-    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN, -1);
+    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN_SERV, -1);
 
     /* set local_agent in tunnel */
     ctx->tunnel->local_agent = ctx->local_agent;
@@ -143,7 +144,7 @@ int do_client(running_ctx_t *ctx)
     }
 
     /* create local_agent */
-    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN, ctx->port_agent_offset);
+    ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN_CLIENT, ctx->port_agent_offset);
     /* create all listener */
     for (i = 0; i < ctx->n_local_agent_port; i++) {
         rn_socket_mngr_listen_add(&(ctx->local_agent->socket_mngr), "127.0.01", ctx->local_agent_port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);

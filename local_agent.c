@@ -45,10 +45,56 @@ static int rn_agent_conn_del_connect(rn_local_agent_t *local_agent, rn_local_age
     return RN_RETVALUE_OK;
 }
 
+/*
+ * return: number of pkt dispatched success
+ */
+static int rn_agent_conn_dispatch(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn)
+{
+    int ret, n_dispatch_pkt = 0;
+    rn_transport_id transport_id;
+    rn_transport_t *transport;
+    rn_pkb_t *pkb;
+
+    if (agent_conn->agent_conn_state != RN_AGENT_CONN_STATE_SESSION_OK) {
+        agent_conn->stat.session_not_ok++;
+        return 0;
+    }
+
+    rn_assert(agent_conn->peer_agent_conn_id != RN_AGENT_CONN_ID_INVALID);
+
+    while (1) {
+        if (RN_GPFIFO_ISEMPTY(agent_conn->recv_fifo)) {
+            break;
+        }
+
+        transport_id = rn_tunnel_bundle_transport_select(local_agent->tunnel, agent_conn->bundle_id);
+        transport = rn_tunnel_get_transport(local_agent->tunnel, transport_id);
+
+        if (RN_GPFIFO_ISFULL(transport->send_fifo)) {
+            /* can't do dispatch */
+            agent_conn->stat.dest_transport_send_fifo_full++;
+            break;
+        }
+
+        pkb = rn_gpfifo_dequeue_p(agent_conn->recv_fifo);
+
+        ret = tunnel_proc_send_session_data(local_agent->tunnel, transport, pkb, agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id, agent_conn->session_data_idx);
+        rn_assert(ret == RN_RETVALUE_OK);
+        agent_conn->session_data_idx++;
+
+        n_dispatch_pkt++;
+    }
+
+
+    return n_dispatch_pkt;
+}
 
 static void rn_agent_conn_reset(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn)
 {
     rn_pkb_t *pkb;
+    uint64_t i;
+    uint32_t window_size;
+    int ret;
 
     rn_agent_conn_valid(agent_conn);
 
@@ -63,6 +109,22 @@ static void rn_agent_conn_reset(rn_local_agent_t *local_agent, rn_local_agent_co
         rn_assert(pkb != NULL);
         rn_assert(rn_pkb_pool_put_pkb(local_agent->pkb_pool, pkb) == RN_RETVALUE_OK);
     }
+
+    /* drain recv reorder buffer */
+    rn_assert(agent_conn->session_pkt_reorder != NULL);
+    window_size = agent_conn->session_pkt_reorder->window_size;
+    for (i = 0; i < window_size; i++) {
+        ret = rn_reorder_get_entry(agent_conn->session_pkt_reorder, i, (void *)&pkb);
+        if (ret == RN_RETVALUE_OK) {
+            /* free pkb */
+            rn_assert(pkb != NULL);
+            rn_assert(rn_pkb_pool_put_pkb(local_agent->pkb_pool, pkb) == RN_RETVALUE_OK);
+        }
+    }
+    /* destroy and create new session pkt order */
+    rn_reorder_destroy(agent_conn->session_pkt_reorder);
+    agent_conn->session_pkt_reorder = rn_reorder_create(window_size);
+    rn_assert(agent_conn->session_pkt_reorder);
 
     memset(RN_V2P(RN_P2V(agent_conn) + offsetof(rn_local_agent_conn_t, agent_conn_state)), 0, sizeof(rn_local_agent_conn_t) - offsetof(rn_local_agent_conn_t, agent_conn_state));
 
@@ -95,6 +157,8 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
         goto __detach_epoll_inst;
     }
 
+    rn_agent_conn_dispatch(local_agent, agent_conn);
+
     /* recv fifo is already full, detach this agent conn */
     if (RN_GPFIFO_ISFULL(agent_conn->recv_fifo)) {
         agent_conn->stat.recv_fifo_full++;
@@ -119,16 +183,22 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
     /* recv_buff enqueue */
     rn_assert(rn_gpfifo_enqueue_p(agent_conn->recv_fifo, pkb) == RN_RETVALUE_OK);
 
+    rn_agent_conn_dispatch(local_agent, agent_conn);
+
     return;
 
 
 __detach_epoll_inst:
     /* remove from epoll_thread */
-    ret = rn_epoll_thread_reg_uninst(local_agent->epoll_thread, &(agent_conn->epoll_inst));
-    if (ret != RN_RETVALUE_OK) {
-        /* todo: */
-        rn_assert(0);
+    if (agent_conn->epoll_inst.already_in_epoll == 1) {
+        ret = rn_epoll_thread_reg_uninst(local_agent->epoll_thread, &(agent_conn->epoll_inst));
+        if (ret != RN_RETVALUE_OK) {
+            /* todo: */
+            rn_assert(0);
+        }
+        rn_dbg(RUN_DBGFLAG_AGENT_CONN, "agent_conn %d, epoll detach.\n", agent_conn->local_agent_conn_id);
     }
+
     return;
 
 __pkt_recv_err:
@@ -141,6 +211,103 @@ __pkt_recv_err:
     }
 
     return;
+}
+
+/*
+ * try to drain agent_conn recv session order
+ */
+void rn_agent_conn_session_order_drain(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn)
+{
+    int ret;
+    rn_pkb_t *pkb;
+
+    /* try to send pkt */
+    while (1) {
+        ret = rn_reorder_get_entry(agent_conn->session_pkt_reorder, agent_conn->session_pkt_reorder->next_idx, (void **)&pkb);
+        if (ret == RN_RETVALUE_REORDER_NO_VALID) {
+            break;
+        }
+        /* do send */
+        ret = rn_pkb_send(pkb, pkb->cur_len, &(agent_conn->socket.vacc_host));
+        rn_assert(ret != RN_RETVALUE_NOENOUGHSPACE);
+        if (ret >= 0) {
+            agent_conn->stat.send_bytes += ret;
+            if (pkb->cur_len == 0) {
+                /* all data in this pkt already send */
+
+                /* remove from 'recv session order' */
+                rn_reorder_remove(agent_conn->session_pkt_reorder);
+
+                /* free this pkt */
+                rn_assert(rn_pkb_pool_put_pkb(local_agent->pkb_pool, pkb) == RN_RETVALUE_OK);
+
+                agent_conn->stat.send_pkt++;
+            } else {
+                /* data not send completed, just wait for next loop */
+                agent_conn->stat.send_pkt_not_complete++;
+                break;
+            }
+        } else {
+            if (ret == VACC_HOST_RET_PEERCLOSE) {
+                /* peer close */
+            } else {
+                /* maybe some err, just return */
+                agent_conn->stat.vacc_send_err++;
+            }
+            break;
+        }
+    }
+}
+
+static int rn_agent_conn_polling(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn, int cycle_ms)
+{
+    int ret;
+
+    rn_agent_conn_dispatch(local_agent, agent_conn);
+
+    if (RN_GPFIFO_CUR_LEN(agent_conn->recv_fifo) < (agent_conn->recv_fifo->depth / 4)) {
+        if (agent_conn->epoll_inst.already_in_epoll == 0) {
+            ret = rn_epoll_thread_reg_inst(local_agent->epoll_thread, &(agent_conn->epoll_inst));
+            if (ret != RN_RETVALUE_OK) {
+                /* todo: */
+                rn_assert(0);
+            }
+            rn_dbg(RUN_DBGFLAG_AGENT_CONN, "agent_conn %d, epoll attach.\n", agent_conn->local_agent_conn_id);
+        }
+    }
+
+    rn_agent_conn_session_order_drain(local_agent, agent_conn);
+
+    return RN_RETVALUE_OK;
+}
+
+
+int rn_agent_conn_polling_all(rn_local_agent_t *local_agent, int cycle_ms)
+{
+    rn_socket_public_t *p, *n;
+    rn_socket_mngr_t *mngr = &(local_agent->socket_mngr);
+    rn_local_agent_conn_t *agent_conn;
+
+    rn_assert((mngr->n_listen + mngr->n_srv_inst + mngr->n_client_inst + RN_GPFIFO_CUR_LEN(mngr->free_fifo)) == mngr->unit_num);
+
+    /* server inst list: */
+    if (mngr->n_srv_inst) {
+        RN_LISTENTRYWALK_SAVE(p, n, &(mngr->srv_inst_list), list_entry) {
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_INST);
+            agent_conn = RN_GETCONTAINER(p, rn_local_agent_conn_t, socket);
+            rn_agent_conn_polling(local_agent, agent_conn, cycle_ms);
+        }
+    }
+    /* client inst list: */
+    if (mngr->n_client_inst) {
+        RN_LISTENTRYWALK_SAVE(p, n, &(mngr->client_inst_list), list_entry) {
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_CLIENT_INST);
+            agent_conn = RN_GETCONTAINER(p, rn_local_agent_conn_t, socket);
+            rn_agent_conn_polling(local_agent, agent_conn, cycle_ms);
+        }
+    }
+
+    return RN_RETVALUE_OK;
 }
 
 static int rn_agent_conn_init(rn_socket_mngr_t *mngr, rn_socket_public_t *socket, void *cb_param)
@@ -280,6 +447,8 @@ rn_local_agent_t * rn_local_agent_create(rn_tunnel_t *tunnel, rn_epoll_thread_t 
         local_agent->agent_conn_list[i].local_agent = local_agent;
         local_agent->agent_conn_list[i].recv_fifo = rn_gpfifo_create(RN_CONFIG_AGENT_CONN_RECV_FIFO_DEPTH, sizeof(rn_pkb_t *));
         rn_assert(local_agent->agent_conn_list[i].recv_fifo != NULL);
+        local_agent->agent_conn_list[i].session_pkt_reorder = rn_reorder_create(RN_CONFIG_AGENT_CONN_SESSION_PKT_WINDOW);
+        rn_assert(local_agent->agent_conn_list[i].session_pkt_reorder != NULL);
         local_agent->agent_conn_list[i].peer_agent_conn_id = RN_AGENT_CONN_ID_INVALID;
         local_agent->agent_conn_list[i].ctrl_transport_id = RN_TRANSPORT_ID_INVALID;
         local_agent->agent_conn_list[i].bundle_id = RN_BUNDLE_ID_INVALID;

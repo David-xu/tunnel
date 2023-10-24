@@ -605,9 +605,16 @@ int vacc_host_create(vacc_host_t *vacc_host, const vacc_host_create_param_t *par
 int vacc_host_destroy(vacc_host_t *vacc_host)
 {
     int ret;
+    vacc_host_cb_put cb_put;
+    void *opaque;
+
     if (!vacc_host) {
         return VACC_HOST_RET_INVALID_PARAM;
     }
+
+    opaque = vacc_host->opaque;
+    cb_put = vacc_host->cb_put;
+
 
     switch (vacc_host->transtype) {
     case VACC_HOST_TRANSTYPE_TCP:
@@ -643,6 +650,8 @@ int vacc_host_destroy(vacc_host_t *vacc_host)
             return VACC_HOST_RET_INVALID_PARAM;
         }
     }
+
+    cb_put(vacc_host, opaque);
 
     return ret;
 }
@@ -685,15 +694,7 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
  */
 static void vacc_host_disconnect(vacc_host_t *vacc_host)
 {
-    void *opaque;
-    vacc_host_cb_put cb_put;
-
-    opaque = vacc_host->opaque;
-    cb_put = vacc_host->cb_put;
     vacc_host_destroy(vacc_host);
-    if (vacc_host->insttype == VACC_HOST_INSTTYPE_SERVER_INST) {
-        cb_put(vacc_host, opaque);
-    }
 }
 
 static int vacc_host_send_data(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_host_addr_u *addr)

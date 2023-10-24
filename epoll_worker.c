@@ -84,11 +84,27 @@ int rn_epoll_thread_destroy(rn_epoll_thread_t *epoll_thread)
 
 static int rn_epoll_thread_reg_inst_ex(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *epoll_inst, int is_edge_trigger)
 {
+    rn_epoll_inst_t *p;
     struct epoll_event event;
-    int ret;
+    int ret, finded = 0;
+
+    RN_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
+        if (p == epoll_inst) {
+            finded = 1;
+            break;
+        }
+    }
+    if (finded == 1) {
+        rn_assert(epoll_inst->already_in_epoll == 1);
+        /* already in epoll */
+        return RN_RETVALUE_OK;
+    }
+
+    rn_assert(epoll_inst->already_in_epoll == 0);
 
     epoll_inst->epoll_thread = epoll_thread;
     epoll_inst->reg_events = event.events;
+    epoll_inst->already_in_epoll = 1;
 
     event.data.ptr = epoll_inst;
     event.events = EPOLLIN | (is_edge_trigger ? EPOLLET : 0);
@@ -129,9 +145,12 @@ int rn_epoll_thread_reg_uninst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t 
         }
     }
     if (finded == 0) {
+        rn_assert(epoll_inst->already_in_epoll == 0);
         /* already removed */
         return RN_RETVALUE_OK;
     }
+
+    rn_assert(epoll_inst->already_in_epoll == 1);
 
     event.data.ptr = epoll_inst;
     event.events = epoll_inst->reg_events;
@@ -141,6 +160,7 @@ int rn_epoll_thread_reg_uninst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t 
     }
 
     rn_listdel(&(epoll_inst->node));
+    epoll_inst->already_in_epoll = 0;
     epoll_thread->n_inst--;
 
     return RN_RETVALUE_OK;

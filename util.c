@@ -194,6 +194,8 @@ uint32_t rn_crc32c_sw(const void *data, uint64_t length)
     return crc;
 }
 
+uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
+
 int rn_printf(const char *fmt, ...)
 {
     char buf[32];
@@ -626,6 +628,7 @@ int rn_pkb_send(rn_pkb_t *pkb, int send_len, vacc_host_t *vacc_host)
     if (send_len >= 0) {
         /* real send send_len bytes */
         rn_assert((uint32_t)send_len <= pkb->cur_len);
+        /* chagen pkb pointer and len */
         pkb->cur_off += send_len;
         pkb->cur_len -= send_len;
     }

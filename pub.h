@@ -23,7 +23,8 @@
 #define RN_CONFIG_TOKEN_FILL_CYCLE_MS       1
 #define RN_CONFIG_SOCKET_BUF_SIZE           (32 * 1024)
 #define RN_CONFIG_MAX_TUNNEL_TRANSPORT      64
-#define RN_CONFIG_MAX_AGENT_CONN            256
+#define RN_CONFIG_MAX_AGENT_CONN_CLIENT     256
+#define RN_CONFIG_MAX_AGENT_CONN_SERV       1024
 
 #define RN_WORKMODE_SERVER                  1
 #define RN_WORKMODE_CLIENT                  2

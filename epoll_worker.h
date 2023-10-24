@@ -7,6 +7,7 @@ typedef struct _rn_epoll_inst {
     struct _rn_epoll_thread *epoll_thread;
     rn_listhead_t node;
     uint32_t reg_events;
+    int already_in_epoll;
 
     /* set by user */
     void (*epoll_inst_cb)(struct _rn_epoll_inst *epoll_inst);

@@ -22,12 +22,14 @@
 #define RN_RETVALUE_PROTO_ERR               -16
 #define RN_RETVALUE_SESSION_CREATE_FAILD    -17
 #define RN_RETVALUE_CHALLENGE_NOT_MATCH     -18
-#define RN_RETVALUE_BUNDLE_NOT_BUILD        -19
 #define RN_RETVALUE_NOPKT_NEED_PROC         -20
+#define RN_RETVALUE_REORDER_EXCEED_WIN      -21
+#define RN_RETVALUE_REORDER_DUP             -22
+#define RN_RETVALUE_REORDER_NO_VALID        -23
 
 #define rn_assert(cond)    do{ \
     if (!(cond)) { \
-        rn_printf("%-24s %4d Assert! `" #cond "'\n", __FUNCTION__, __LINE__); \
+        rn_printf("[Assert]%-24s %4d! `" #cond "'\n", __FUNCTION__, __LINE__); \
         while (1) {sleep(1000);} \
     } \
 } while (0)
@@ -40,6 +42,17 @@
     } while(0)
 #define rn_err(fmt, args...) do { \
         rn_printf("[ERR] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+    } while(0)
+
+extern uint64_t g_dbgprint_flag;
+
+#define RUN_DBGFLAG_AGENT_CONN                              (0x1 << 0)
+#define RUN_DBGFLAG_PROTOCOL_DUMP                           (0x1 << 1)
+#define RUN_DBGFLAG_TRANSPORT_DBG                           (0x1 << 2)
+#define rn_dbg(flag, fmt, args...) do { \
+        if (g_dbgprint_flag & flag) { \
+            rn_printf("[DBG] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+        } \
     } while(0)
 
 #ifndef rte_mb
@@ -396,6 +409,81 @@ int rn_pkb_pool_put_pkb(rn_pkb_pool_t *pkb_pool, rn_pkb_t *pkb);
 struct _vacc_host;
 int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, struct _vacc_host *vacc_host);
 int rn_pkb_send(rn_pkb_t *pkb, int send_len, struct _vacc_host *vacc_host);
+
+/*
+ * reorder
+ */
+typedef struct {
+    uint64_t    next_idx;
+    uint32_t    window_size;
+    uint32_t    resv;
+    void        *order_buf[0];
+} rn_reorder_t;
+
+static inline rn_reorder_t *rn_reorder_create(uint32_t window_size)
+{
+    rn_reorder_t *reorder;
+    reorder = malloc(sizeof(rn_reorder_t) + window_size * sizeof(void *));
+    rn_assert(reorder != NULL);
+    rn_assert((window_size & (window_size - 1)) == 0);
+    memset(reorder, 0, sizeof(rn_reorder_t) + window_size * sizeof(void *));
+    reorder->window_size = window_size;
+
+    return reorder;
+}
+
+static inline void rn_reorder_destroy(rn_reorder_t *reorder)
+{
+    free(reorder);
+}
+
+static inline int rn_reorder_get_entry(rn_reorder_t *reorder, uint64_t idx, void **p) {
+    uint64_t i = reorder->next_idx & (reorder->window_size - 1);
+    rn_assert(p != NULL);
+    void *ret_v;
+
+    ret_v = reorder->order_buf[i];
+    if (ret_v == NULL) {
+        return RN_RETVALUE_REORDER_NO_VALID;
+    }
+
+    if (ret_v == ((void *)1)) {
+        ret_v = NULL;
+    }
+
+    if (p) {
+        *p = ret_v;
+    }
+
+    return RN_RETVALUE_OK;
+}
+
+static inline int rn_reorder_insert(rn_reorder_t *reorder, uint64_t idx, void *p) {
+    uint64_t i = idx & (reorder->window_size - 1);
+    uint64_t offset = idx - reorder->next_idx;
+    if (offset >= reorder->window_size) {
+        return RN_RETVALUE_REORDER_EXCEED_WIN;
+    }
+    if (reorder->order_buf[i] != NULL) {
+        return RN_RETVALUE_REORDER_DUP;
+    }
+    if (p == NULL) {
+        reorder->order_buf[i] = (void *)1;
+    } else {
+        reorder->order_buf[i] = p;
+    }
+
+    return RN_RETVALUE_OK;
+}
+
+static inline void rn_reorder_remove(rn_reorder_t *reorder) {
+    uint64_t i = reorder->next_idx & (reorder->window_size - 1);
+
+    rn_assert(reorder->order_buf[i] != NULL);
+
+    reorder->order_buf[i] = NULL;
+    reorder->next_idx++;
+}
 
 /*
  * public socket mngr

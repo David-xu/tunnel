@@ -15,6 +15,24 @@ typedef enum {
     RN_TRANSPORT_FRAME_TYPE_SESSION_DEL,                        /* without ack */
 } rn_transport_frame_type_e;
 
+static inline const char * rn_transport_frame_type_str(rn_transport_frame_type_e type)
+{
+    const char *__name_str[] = {
+        [0] = "0",
+        [RN_TRANSPORT_FRAME_TYPE_DATA] = "RN_TRANSPORT_FRAME_TYPE_DATA",
+        [RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY] = "RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY",
+        [RN_TRANSPORT_FRAME_TYPE_BUNDLE_JOIN] = "RN_TRANSPORT_FRAME_TYPE_BUNDLE_JOIN",
+        [RN_TRANSPORT_FRAME_TYPE_SESSION_NEW] = "RN_TRANSPORT_FRAME_TYPE_SESSION_NEW",
+        [RN_TRANSPORT_FRAME_TYPE_SESSION_NEW_ACK] = "RN_TRANSPORT_FRAME_TYPE_SESSION_NEW_ACK",
+        [RN_TRANSPORT_FRAME_TYPE_SESSION_DEL] = "RN_TRANSPORT_FRAME_TYPE_SESSION_DEL",
+    };
+    if (type >= RN_ARRAY_SIZE(__name_str)) {
+        return "unknown";
+    }
+
+    return __name_str[type];
+}
+
 typedef struct {
     uint32_t                        magic;                      /* RN_TRANSPORT_PROTOCOL_MAGIC */
     uint32_t                        challenge;
@@ -41,9 +59,15 @@ typedef struct {
 } rn_protocol_pkt_session_new_resp_t;
 
 typedef struct {
-    uint32_t        src_agent_conn_id;                         /*  */
-    uint32_t        dst_agent_conn_id;                         /*  */
+    uint32_t        src_agent_conn_id;                          /*  */
+    uint32_t        dst_agent_conn_id;                          /*  */
 } rn_protocol_pkt_session_del_req_t;
+
+typedef struct {
+    uint32_t        src_agent_conn_id;
+    uint32_t        dst_agent_conn_id;                          /* indicate session, after 'session create' proc, produced by tunnel server */
+    uint64_t        idx;                                        //
+} rn_protocol_pkt_session_data_t;
 
 typedef enum {
     RN_TRANSPORT_STATE_UNINIT = 0,
@@ -116,10 +140,20 @@ typedef struct {
         uint64_t            body_not_complete;
 
         uint64_t            drop_transport_not_in_bundle;
+        uint64_t            drop_agent_conn_not_ready;
 
         uint64_t            vacc_send_err, vacc_recv_err;
     } stat;
 } rn_transport_t;
+
+static inline int rn_transport_can_send(rn_transport_t *transport)
+{
+    if ((transport->transport_state == RN_TRANSPORT_STATE_CONNECTED) || (transport->transport_state == RN_TRANSPORT_STATE_BUNDLE_ALREADY_JOIN)) {
+        return 1;
+    }
+
+    return 0;
+}
 
 struct _rn_local_agent;
 
@@ -193,6 +227,7 @@ int tunnel_proc_send_bundle_join(rn_tunnel_t *tunnel, rn_transport_t *transport,
 int tunnel_proc_send_session_new(rn_tunnel_t *tunnel, rn_transport_t *transport, uint32_t port, rn_local_agent_conn_id src_agent_conn_id, uint32_t *create_challenge);
 int tunnel_proc_send_session_new_ack(rn_tunnel_t *tunnel, rn_transport_t *transport, int ret, uint32_t src_agent_conn_id, uint32_t dst_agent_conn_id, uint32_t source_challenge);
 int tunnel_proc_send_session_del(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_local_agent_conn_id src_agent_conn_id, rn_local_agent_conn_id dst_agent_conn_id);
+int tunnel_proc_send_session_data(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *pkb, rn_local_agent_conn_id src_agent_conn_id, rn_local_agent_conn_id dst_agent_conn_id, uint64_t idx);
 
 int rn_tunnel_transport_polling_all(rn_tunnel_t *tunnel, int cycle_ms);
 

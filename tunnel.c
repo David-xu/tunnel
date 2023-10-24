@@ -74,6 +74,9 @@ int tunnel_proc_send_session_new(rn_tunnel_t *tunnel, rn_transport_t *transport,
     session_new_req->src_agent_conn_id = src_agent_conn_id;
     pkb->cur_len = sizeof(rn_protocol_pkt_session_new_req_t);
 
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, port %d, src_agent_conn_id %d\n",
+        transport->transport_id, session_new_req->port, session_new_req->src_agent_conn_id);
+
     return rn_transport_send(tunnel, transport, pkb, RN_TRANSPORT_FRAME_TYPE_SESSION_NEW, create_challenge);
 }
 
@@ -84,6 +87,9 @@ static int tunnel_proc_recv_session_new(rn_tunnel_t *tunnel, rn_transport_t *tra
     rn_socket_public_t *connected_socket;
     rn_local_agent_conn_t *agent_conn;
     int ret;
+
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, port %d, src_agent_conn_id %d\n",
+        transport->transport_id, session_new_req->port, session_new_req->src_agent_conn_id);
 
     if (transport->transport_state != RN_TRANSPORT_STATE_BUNDLE_ALREADY_JOIN) {
         /* todo */
@@ -159,6 +165,9 @@ int tunnel_proc_send_session_new_ack(rn_tunnel_t *tunnel, rn_transport_t *transp
 
     pkb->cur_len = sizeof(rn_protocol_pkt_session_new_resp_t);
 
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, source_challenge 0x%x\n",
+        transport->transport_id, session_new_resp->src_agent_conn_id, session_new_resp->dst_agent_conn_id, session_new_resp->source_challenge);
+
     return rn_transport_send(tunnel, transport, pkb, RN_TRANSPORT_FRAME_TYPE_SESSION_NEW_ACK, NULL);
 }
 
@@ -167,6 +176,9 @@ static int tunnel_proc_recv_session_new_ack(rn_tunnel_t *tunnel, rn_transport_t 
     rn_protocol_pkt_session_new_resp_t *session_new_resp = (rn_protocol_pkt_session_new_resp_t *)(frame_head + 1);
     rn_bundle_id bundle_id = transport->belongs_to_bundle_id;
     rn_local_agent_conn_t *agent_conn;
+
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, ret %d, src_agent_conn_id %d, dst_agent_conn_id %d, source_challenge 0x%x\n",
+        transport->transport_id, session_new_resp->ret, session_new_resp->src_agent_conn_id, session_new_resp->dst_agent_conn_id, session_new_resp->source_challenge);
 
     if (transport->transport_state != RN_TRANSPORT_STATE_BUNDLE_ALREADY_JOIN) {
         /* todo */
@@ -221,6 +233,9 @@ int tunnel_proc_send_session_del(rn_tunnel_t *tunnel, rn_transport_t *transport,
 
     pkb->cur_len = sizeof(rn_protocol_pkt_session_del_req_t);
 
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d\n",
+        transport->transport_id, session_del_req->src_agent_conn_id, session_del_req->dst_agent_conn_id);
+
     return rn_transport_send(tunnel, transport, pkb, RN_TRANSPORT_FRAME_TYPE_SESSION_DEL, NULL);
 }
 
@@ -231,6 +246,9 @@ static int tunnel_proc_recv_session_del(rn_tunnel_t *tunnel, rn_transport_t *tra
     rn_local_agent_conn_id local_agent_conn_id;
     rn_local_agent_conn_t *local_agent_conn;
 
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d\n",
+        transport->transport_id, session_del_req->src_agent_conn_id, session_del_req->dst_agent_conn_id);
+
     if (transport->transport_state != RN_TRANSPORT_STATE_BUNDLE_ALREADY_JOIN) {
         /* todo */
         rn_assert(0);
@@ -238,18 +256,103 @@ static int tunnel_proc_recv_session_del(rn_tunnel_t *tunnel, rn_transport_t *tra
 
     if (rn_tunnel_bundle_remote_agent_conn_inbundle(tunnel, bundle_id, session_del_req->src_agent_conn_id, &local_agent_conn_id) == 0) {
         /* can't find remote agent_conn */
-        rn_assert(0);
+        rn_err("transport_id %d, bundle_id %d, session_del_req->src_agent_conn_id %d, can't find in bundle.\n",
+            transport->transport_id, bundle_id, session_del_req->src_agent_conn_id);
+        return RN_RETVALUE_OK;
     }
-    /**/
-    rn_assert(local_agent_conn_id == (rn_local_agent_conn_id)(session_del_req->dst_agent_conn_id));
+
+    if (local_agent_conn_id != (rn_local_agent_conn_id)(session_del_req->dst_agent_conn_id))
+    {
+        rn_err("transport_id %d, bundle_id %d, session_del_req->src_agent_conn_id %d, session_del_req->dst_agent_conn_id %d != local_agent_conn_id %d, bundle %d\n",
+            transport->transport_id, bundle_id, session_del_req->src_agent_conn_id, session_del_req->dst_agent_conn_id, local_agent_conn_id);
+        return RN_RETVALUE_OK;
+    }
 
     local_agent_conn = rn_local_agent_get_conn(tunnel->local_agent, local_agent_conn_id);
+
+    if (local_agent_conn->socket.vacc_host.insttype != VACC_HOST_INSTTYPE_CLIENT_INST) {
+        rn_err("transport_id %d, bundle_id %d, session_del_req->src_agent_conn_id %d, session_del_req->dst_agent_conn_id %d, insttype %d, can't del\n",
+            transport->transport_id, bundle_id, session_del_req->src_agent_conn_id, session_del_req->dst_agent_conn_id, local_agent_conn->socket.vacc_host.insttype);
+        return RN_RETVALUE_OK;
+    }
 
     /* set passive close */
     local_agent_conn->passive_close = 1;
 
     /* close local agent conn */
     vacc_host_destroy(&(local_agent_conn->socket.vacc_host));
+
+    return RN_RETVALUE_OK;
+}
+
+int tunnel_proc_send_session_data(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *pkb, rn_local_agent_conn_id src_agent_conn_id, rn_local_agent_conn_id dst_agent_conn_id, uint64_t idx)
+{
+    rn_protocol_pkt_session_data_t *session_data;
+
+    /* append session data head */
+    rn_assert(pkb->cur_off >= sizeof(rn_protocol_pkt_session_data_t));
+    pkb->cur_off -= sizeof(rn_protocol_pkt_session_data_t);
+    pkb->cur_len += sizeof(rn_protocol_pkt_session_data_t);
+    session_data = RN_PKB_HEAD(pkb);
+    session_data->src_agent_conn_id = src_agent_conn_id;
+    session_data->dst_agent_conn_id = dst_agent_conn_id;
+    session_data->idx = idx;
+
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, 0x%ld\n",
+        transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx);
+
+    return rn_transport_send(tunnel, transport, pkb, RN_TRANSPORT_FRAME_TYPE_DATA, NULL);
+}
+
+static int tunnel_proc_recv_session_data(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_transport_frame_head_t *frame_head, rn_pkb_t *pkb)
+{
+    rn_protocol_pkt_session_data_t *session_data = (rn_protocol_pkt_session_data_t *)(frame_head + 1);
+    rn_local_agent_conn_id local_agent_conn_id;
+    rn_local_agent_conn_t *local_agent_conn;
+    int ret;
+
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, 0x%ld\n",
+        transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx);
+
+    /* change len, remove public head and session data head */
+    pkb->cur_off += (RN_TRANSPORT_FRAME_HEAD_LEN + sizeof(rn_protocol_pkt_session_data_t));
+    pkb->cur_len -= (RN_TRANSPORT_FRAME_HEAD_LEN + sizeof(rn_protocol_pkt_session_data_t));
+
+    local_agent_conn_id = (rn_local_agent_conn_id)(session_data->dst_agent_conn_id);
+    local_agent_conn = rn_local_agent_get_conn(tunnel->local_agent, local_agent_conn_id);
+
+    if (local_agent_conn->agent_conn_state != RN_AGENT_CONN_STATE_SESSION_OK) {
+        /* need drop pkt */
+        transport->stat.drop_agent_conn_not_ready++;
+
+        rn_err("transport id %d, agent_conn id %d, agent_conn_state %d, drop session data.\n",
+            transport->transport_id, local_agent_conn_id, local_agent_conn->agent_conn_state);
+        return RN_RETVALUE_ERR;
+    }
+    /* some thing wrong */
+    if (local_agent_conn->peer_agent_conn_id != (rn_local_agent_conn_id)session_data->src_agent_conn_id) {
+        /* need drop pkt */
+        transport->stat.drop_agent_conn_not_ready++;
+
+        rn_err("transport id %d, agent_conn id %d, local_agent_conn->peer_agent_conn_id %d != session_data->src_agent_conn_id %d, drop session data.\n",
+            transport->transport_id, local_agent_conn_id, local_agent_conn->peer_agent_conn_id, session_data->src_agent_conn_id);
+        return RN_RETVALUE_ERR;
+    }
+
+    ret = rn_reorder_insert(local_agent_conn->session_pkt_reorder, session_data->idx, pkb);
+    if (ret == RN_RETVALUE_REORDER_EXCEED_WIN) {
+        rn_err("transport id %d, agent_conn id %d, exceed window idx 0x%lx, next idx 0x%lx, window size 0x%x, drop session data.\n",
+            transport->transport_id, local_agent_conn_id, session_data->idx, local_agent_conn->session_pkt_reorder->next_idx, local_agent_conn->session_pkt_reorder->window_size);
+        return RN_RETVALUE_ERR;
+
+    } else if (ret == RN_RETVALUE_REORDER_DUP) {
+        rn_err("transport id %d, agent_conn id %d, dup session data idx 0x%lx, drop session data.\n",
+            transport->transport_id, local_agent_conn_id, session_data->idx);
+        return RN_RETVALUE_ERR;
+    }
+
+
+    rn_agent_conn_session_order_drain(tunnel->local_agent, local_agent_conn);
 
     return RN_RETVALUE_OK;
 }
@@ -302,6 +405,8 @@ static void rn_transport_reset(rn_tunnel_t *tunnel, rn_transport_t *transport)
     /* reset bucket */
     single_token_bucket_init(&(transport->send_stb), 0, RN_CONFIG_TRANSPORT_BKT_MAX_BURST);
     transport->send_bps = tunnel->default_transport_send_bps;
+
+    rn_dbg(RUN_DBGFLAG_TRANSPORT_DBG, "transport_id %d after reset: transport->send_fifo tail %d, head %d\n", transport->transport_id, transport->send_fifo->tail, transport->send_fifo->head);
 }
 
 /*
@@ -310,6 +415,7 @@ static void rn_transport_reset(rn_tunnel_t *tunnel, rn_transport_t *transport)
 static void rn_transport_proc_1_frame(rn_transport_t *transport)
 {
     rn_transport_frame_head_t *frame_head = transport->frame_head;
+    int ret;
 
     rn_assert(frame_head != NULL);
 
@@ -319,17 +425,16 @@ static void rn_transport_proc_1_frame(rn_transport_t *transport)
             /* this transport it not in any bundle, just discard this pkt
               don't do anything, it will be dorped after return to rn_transport_epoll_inst_cb() */
             transport->stat.drop_transport_not_in_bundle++;
-        } else {
-            /* change len, detach head */
-            transport->cur_proc_frame->cur_len = frame_head->real_len;
-            transport->cur_proc_frame->cur_off += RN_TRANSPORT_FRAME_HEAD_LEN;
-            transport->cur_proc_frame->cur_len -= RN_TRANSPORT_FRAME_HEAD_LEN;
-            /* commit to upper protocol layer */
-            /* todo */
-            rn_assert(0);
 
-            /* transport->cur_proc_frame should clean, the frame is NOT belongs to this transport anymore */
-            transport->cur_proc_frame = NULL;
+            rn_err("transport id %d, drop session data, not in bundle.\n", transport->transport_id);
+        } else {
+            ret = tunnel_proc_recv_session_data(transport->tunnel, transport, frame_head, transport->cur_proc_frame);
+            if (ret == RN_RETVALUE_OK) {
+                /* transport->cur_proc_frame should clean, the frame is NOT belongs to this transport anymore */
+                transport->cur_proc_frame = NULL;
+            } else {
+
+            }
         }
 
         break;
@@ -478,6 +583,10 @@ static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *tr
     int send_len_permit, ret;
     rn_pkb_t *pkb;
 
+    if (!rn_transport_can_send(transport)) {
+        return;
+    }
+
     /* try to send pkt */
     while (1) {
         pkb = rn_gpfifo_peek_p(transport->send_fifo);
@@ -503,7 +612,11 @@ static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *tr
 
                     transport->stat.send_pkt++;
                 } else {
-                    /* data not send completed, maybe no enough credit, just wait for next loop */
+                    /* data not send completed, maybe:
+                  *  1. no enough credit
+                  *  2. socket buffer in kernel is full
+                  *  just wait for next loop
+                  */
                     transport->stat.send_pkt_not_complete++;
                     break;
                 }
@@ -538,6 +651,13 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     rn_transport_frame_head_t *header;
     uint8_t key_buf[RN_AES_KEY_LEN];
 
+    if (!rn_transport_can_send(transport)) {
+        rn_warn("transport_id %d, drop packet type %s, transport->transport_state %d\n",
+            transport->transport_id, rn_transport_frame_type_str(type), transport->transport_state);
+        rn_assert(rn_pkb_pool_put_pkb(tunnel->pkb_pool, pkb) == RN_RETVALUE_OK);
+        return RN_RETVALUE_OK;
+    }
+
     rn_transport_send_fifo_drain(tunnel, transport);
 
     if (RN_GPFIFO_ISFULL(transport->send_fifo)) {
@@ -556,8 +676,9 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     /* add transform frame header */
     pkb->cur_len += RN_TRANSPORT_FRAME_HEAD_LEN;
     pkb->cur_off -= RN_TRANSPORT_FRAME_HEAD_LEN;
-    header = RN_PKB_HEAD(pkb);
+    rn_assert(pkb->cur_len <= pkb->bufsize);
 
+    header = RN_PKB_HEAD(pkb);
     header->magic = RN_TRANSPORT_PROTOCOL_MAGIC;
     header->challenge = rand();
     header->align_len = pkb->cur_len;
@@ -585,6 +706,9 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
         /* update transport tx key */
         rn_transport_tx_enable_aes_128(transport, key_buf);
     }
+
+    rn_dbg(RUN_DBGFLAG_TRANSPORT_DBG, "transport_id %d, type %s align_len 0x%x, real_len 0x%x\n",
+        transport->transport_id, rn_transport_frame_type_str(type), pkb->cur_len, real_len);
 
     return RN_RETVALUE_OK;
 }
