@@ -47,8 +47,9 @@
 extern uint64_t g_dbgprint_flag;
 
 #define RUN_DBGFLAG_AGENT_CONN                              (0x1 << 0)
-#define RUN_DBGFLAG_PROTOCOL_DUMP                           (0x1 << 1)
-#define RUN_DBGFLAG_TRANSPORT_DBG                           (0x1 << 2)
+#define RUN_DBGFLAG_AGENT_CONN_DUMPDATA                     (0x1 << 1)
+#define RUN_DBGFLAG_PROTOCOL_DUMP                           (0x1 << 2)
+#define RUN_DBGFLAG_TRANSPORT_DBG                           (0x1 << 3)
 #define rn_dbg(flag, fmt, args...) do { \
         if (g_dbgprint_flag & flag) { \
             rn_printf("[DBG] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
@@ -486,6 +487,28 @@ static inline void rn_reorder_remove(rn_reorder_t *reorder) {
 }
 
 /*
+ * return
+ */
+static inline int rn_reorder_get_pending_list(rn_reorder_t *reorder, uint64_t *idx_list, void *p_list[])
+{
+    uint64_t idx = reorder->next_idx;
+    uint32_t i, n = 0;
+    void *v;
+    for (i = 0; i < reorder->window_size; i++) {
+        if (rn_reorder_get_entry(reorder, idx + i, &v) == RN_RETVALUE_OK) {
+            if (idx_list) {
+                idx_list[n] = idx + i;
+            }
+            if (p_list) {
+                p_list[n] = v;
+            }
+        }
+    }
+
+    return n;
+}
+
+/*
  * public socket mngr
  */
 typedef struct {
@@ -522,11 +545,13 @@ typedef struct _rn_socket_mngr {
 
 #define RN_SOCKET_ENTRY(mngr, idx)      ((void *)((mngr)->socket_list) + (idx) * (mngr)->unit_size)
 
+typedef void (*rn_socket_mngr_dump_socket)(rn_socket_public_t *socket, void *dump_p);
+
 int rn_socket_mngr_create(rn_socket_mngr_t *mngr, rn_socket_public_t *socket_list, uint32_t unit_num, uint32_t unit_size, rn_socket_init_cb socket_init, rn_socket_uninit_cb socket_uninit, void *cb_param);
 int rn_socket_mngr_destroy(rn_socket_mngr_t *mngr);
 int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize);
 int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket);
-void rn_socket_mngr_dump(rn_socket_mngr_t *mngr);
+void rn_socket_mngr_dump(rn_socket_mngr_t *mngr, rn_socket_mngr_dump_socket dump_fn, void *dump_p);
 
 #endif
 

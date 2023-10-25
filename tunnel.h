@@ -76,7 +76,8 @@ typedef enum {
     RN_TRANSPORT_STATE_BUNDLE_ALREADY_JOIN,
 } rn_transport_state_e;
 
-#define RN_CONFIG_TRANSPORT_FRAME_MAXLEN            (RN_CONFIG_PKB_SIZE)
+#define RN_CONFIG_TRANSPORT_FRAME_MAXLEN                    (RN_CONFIG_PKB_SIZE - RN_PKB_OVERHEAD)
+#define RN_CONFIG_TRANSPORT_FRAME_SESSION_DATA_MAXLEN       (RN_CONFIG_TRANSPORT_FRAME_MAXLEN - sizeof(rn_transport_frame_head_t) - sizeof(rn_protocol_pkt_session_data_t) - RN_TRANSPORT_PROTOCOL_PKTLEN_ALIGN)
 
 /*
  * bundle
@@ -246,5 +247,6 @@ void rn_tunnel_bundle_del(rn_tunnel_t *tunnel, rn_bundle_id bundle_id);
 
 rn_tunnel_t * rn_tunnel_create(rn_epoll_thread_t *epoll_thread, rn_pkb_pool_t *pkb_pool, uint32_t n_transport, uint8_t *default_key, uint32_t default_transport_send_bps);
 int rn_tunnel_destroy(rn_tunnel_t *tunnel);
+void rn_tunnel_dump(rn_tunnel_t *tunnel);
 
 #endif

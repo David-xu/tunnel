@@ -1,5 +1,77 @@
 #include "pub.h"
 
+struct {
+    uint64_t            session_not_ok;
+    uint64_t            recv_fifo_full;
+    uint64_t            no_free_pkb;
+
+    uint64_t            send_pkt, send_bytes, send_pkt_not_complete;
+
+    uint64_t            vacc_send_err, vacc_recv_err;
+
+    uint64_t            dest_transport_send_fifo_full;
+} stat;
+
+
+static void rn_agent_conn_dump_cb(rn_socket_public_t *socket, void *dump_p)
+{
+    rn_local_agent_conn_t *agent_conn = RN_GETCONTAINER(socket, rn_local_agent_conn_t, socket);
+
+    if (socket->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER) {
+        return;
+    }
+
+    rn_printf("\t\t\agent_conn id %d, peer agent conn id %d, state %d, session_data_idx %ld, bundle_id %d, recv_fifo tail %d head %d\n"
+        "\t\t\t stat:\n"
+        "\t\t\tsession_not_ok %ld\n"
+        "\t\t\trecv_fifo_full %ld\n"
+        "\t\t\tno_free_pkb %ld\n"
+        "\t\t\tsend_pkt %ld\n"
+        "\t\t\tsend_bytes %ld\n"
+        "\t\t\tsend_pkt_not_complete %ld\n"
+        "\t\t\tvacc_send_err %ld\n"
+        "\t\t\tvacc_recv_err %ld\n"
+        "\t\t\tdest_transport_send_fifo_full %ld\n",
+        agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id,
+        agent_conn->agent_conn_state, agent_conn->bundle_id, agent_conn->session_data_idx, agent_conn->recv_fifo->tail, agent_conn->recv_fifo->head,
+        agent_conn->stat.session_not_ok,
+        agent_conn->stat.recv_fifo_full,
+        agent_conn->stat.no_free_pkb,
+        agent_conn->stat.send_pkt,
+        agent_conn->stat.send_bytes,
+        agent_conn->stat.send_pkt_not_complete,
+        agent_conn->stat.vacc_send_err,
+        agent_conn->stat.vacc_recv_err,
+        agent_conn->stat.dest_transport_send_fifo_full);
+
+    if (agent_conn->session_pkt_reorder) {
+        uint64_t idx_list[agent_conn->session_pkt_reorder->window_size];
+        void *p[agent_conn->session_pkt_reorder->window_size];
+        rn_pkb_t *pkb;
+        int n, i;
+
+        n = rn_reorder_get_pending_list(agent_conn->session_pkt_reorder, idx_list, p);
+        rn_printf("\t\t\treorder n_pending %d\n", n);
+        for (i = 0; i < n; i++) {
+            pkb = p[i];
+            rn_printf("\t\t\t\tidx %ld\n", idx_list[i]);
+            rn_printf("\t\t\t\tpkb cur_len %ld\n", pkb->cur_len);
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+            rn_printf("\t\t\t\tpkb idx %d\n", pkb->idx);
+#endif
+        }
+    }
+
+}
+
+void rn_local_agent_dump(rn_local_agent_t *local_agent)
+{
+    rn_printf("local agent: n_agent_conn %d\n",
+        local_agent->n_agent_conn);
+
+    rn_socket_mngr_dump(&(local_agent->socket_mngr), rn_agent_conn_dump_cb, local_agent);
+}
+
 static int rn_agent_conn_new_connect(rn_local_agent_t *local_agent, rn_local_agent_conn_t *agent_conn)
 {
     rn_transport_id ctrl_transport_id;
@@ -173,14 +245,15 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
     }
 
     /* do recv, rand() len */
-    recv_len = rand() % RN_PKB_LEFTSPACE(pkb);
+    recv_len = rand() % (RN_CONFIG_TRANSPORT_FRAME_SESSION_DATA_MAXLEN / 2);
+    recv_len += (RN_CONFIG_TRANSPORT_FRAME_SESSION_DATA_MAXLEN / 2);
     ret = rn_pkb_recv(pkb, recv_len, &(agent_conn->socket.vacc_host));
     if (ret < 0) {
         rn_pkb_pool_put_pkb(local_agent->pkb_pool, pkb);
         goto __pkt_recv_err;
     }
 
-    rn_dbg(RUN_DBGFLAG_AGENT_CONN, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+    rn_dbg(RUN_DBGFLAG_AGENT_CONN_DUMPDATA, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
         agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id, ret, pkb->cur_len,
         ((uint32_t *)RN_PKB_HEAD(pkb))[0], ((uint32_t *)RN_PKB_HEAD(pkb))[1], ((uint32_t *)RN_PKB_HEAD(pkb))[2], ((uint32_t *)RN_PKB_HEAD(pkb))[3]);
 
@@ -472,6 +545,9 @@ int rn_local_agent_destroy(rn_local_agent_t *local_agent)
     for (i = 0; i < local_agent->n_agent_conn; i++) {
         rn_assert(RN_GPFIFO_ISEMPTY(local_agent->agent_conn_list[i].recv_fifo));
         rn_gpfifo_destroy(local_agent->agent_conn_list[i].recv_fifo);
+
+        rn_assert(rn_reorder_get_pending_list(local_agent->agent_conn_list[i].session_pkt_reorder, NULL, NULL) == 0);
+        rn_reorder_destroy(local_agent->agent_conn_list[i].session_pkt_reorder);
     }
 
     free(local_agent);

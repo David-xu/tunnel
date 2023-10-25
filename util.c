@@ -194,7 +194,8 @@ uint32_t rn_crc32c_sw(const void *data, uint64_t length)
     return crc;
 }
 
-uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
+// uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
+uint64_t g_dbgprint_flag = 1;
 
 int rn_printf(const char *fmt, ...)
 {
@@ -605,6 +606,8 @@ int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, vacc_host_t *vacc_host)
         return RN_RETVALUE_NOENOUGHSPACE;
     }
 
+    rn_assert(recv_len != 0);
+
     /* do recv */
     recv_len = vacc_host_read(vacc_host, RN_PKB_TAIL(pkb), recv_len);
 
@@ -723,23 +726,23 @@ static int rn_socket_mngr_init(struct _vacc_host *vacc_host, void *opaque)
 
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
-        rn_log("%s listen socket init, conn_id %d\n",
+        rn_log("%s listen socket init, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, vacc_host->sock_fd);
 
         rn_listadd_tail(&(socket->list_entry), &(mngr->listen_list));
         mngr->n_listen++;
         break;
     case VACC_HOST_INSTTYPE_SERVER_INST:
-        rn_log("%s server inst connect, conn_id %d\n",
+        rn_log("%s server inst connect, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, vacc_host->sock_fd);
         if (vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP) {
             struct in_addr in = vacc_host->u.tcp.cli_addr.sin_addr;
             char ipstr[INET_ADDRSTRLEN];
@@ -755,12 +758,12 @@ static int rn_socket_mngr_init(struct _vacc_host *vacc_host, void *opaque)
         mngr->n_srv_inst++;
         break;
     case VACC_HOST_INSTTYPE_CLIENT_INST:
-        rn_log("%s client inst connect, conn_id %d\n",
+        rn_log("%s client inst connect, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, vacc_host->sock_fd);
 
         rn_listadd_tail(&(socket->list_entry), &(mngr->client_inst_list));
         mngr->n_client_inst++;
@@ -910,7 +913,7 @@ int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint
     return RN_RETVALUE_OK;
 }
 
-void rn_socket_mngr_dump(rn_socket_mngr_t *mngr)
+void rn_socket_mngr_dump(rn_socket_mngr_t *mngr, rn_socket_mngr_dump_socket dump_fn, void *dump_p)
 {
     rn_socket_public_t *p, *n;
 
@@ -924,22 +927,31 @@ void rn_socket_mngr_dump(rn_socket_mngr_t *mngr)
         RN_LISTENTRYWALK_SAVE(p, n, &(mngr->listen_list), list_entry) {
             rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
             rn_log("\t\t listen port %d\n", p->listen_port);
+            if (dump_fn) {
+                dump_fn(p, dump_p);
+            }
         }
     }
     /* server inst list: */
     if (mngr->n_srv_inst) {
         rn_log("\tserver inst:");
         RN_LISTENTRYWALK_SAVE(p, n, &(mngr->srv_inst_list), list_entry) {
-            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_INST);
             rn_log("\t\tlisten port %d\n", p->listen_port);
+            if (dump_fn) {
+                dump_fn(p, dump_p);
+            }
         }
     }
     /* client inst list: */
     if (mngr->n_client_inst) {
         rn_log("\tclient inst:");
         RN_LISTENTRYWALK_SAVE(p, n, &(mngr->client_inst_list), list_entry) {
-            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER);
+            rn_assert(p->vacc_host.insttype == VACC_HOST_INSTTYPE_CLIENT_INST);
             rn_log("\t\tconnect port %d\n", p->connect_port);
+            if (dump_fn) {
+                dump_fn(p, dump_p);
+            }
         }
     }
 

@@ -177,8 +177,12 @@ static void cmd_loop(void)
             if (memcmp(argv[0], "--dump", 6) == 0) {
                 if (g_ctx.mode == RN_WORKMODE_CLIENT) {
                     rn_log("client:\n");
+                    rn_local_agent_dump(g_ctx.local_agent);
+                    rn_tunnel_dump(g_ctx.tunnel);
                 } else {
                     rn_log("server:\n");
+                    rn_tunnel_dump(g_ctx.tunnel);
+                    rn_local_agent_dump(g_ctx.local_agent);
                 }
             } else if (memcmp(argv[0], "-q", 2) == 0) {
                 g_ctx.running = 0;

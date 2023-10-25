@@ -1,5 +1,49 @@
 #include "pub.h"
 
+static void rn_tunnel_transport_dump_cb(rn_socket_public_t *socket, void *dump_p)
+{
+    rn_transport_t *transport = RN_GETCONTAINER(socket, rn_transport_t, socket);
+
+    if (socket->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_LISTENER) {
+        return;
+    }
+
+    rn_printf("\t\t\ttransport id %d, bundle_id %d, state %d, send_fifo tail %d head %d\n"
+        "\t\t\t stat:\n"
+        "\t\t\tsend_no_enough_credit %ld\n"
+        "\t\t\tsend_pkt %ld\n"
+        "\t\t\tsend_bytes %ld\n"
+        "\t\t\tsend_pkt_not_complete %ld\n"
+        "\t\t\thead_not_complete %ld\n"
+        "\t\t\tbody_not_complete %ld\n"
+        "\t\t\tdrop_transport_not_in_bundle %ld\n"
+        "\t\t\tdrop_agent_conn_not_ready %ld\n"
+        "\t\t\tvacc_send_err %ld\n"
+        "\t\t\tvacc_recv_err %ld\n",
+        transport->transport_id, transport->belongs_to_bundle_id,
+        transport->transport_state, transport->send_fifo->tail, transport->send_fifo->head,
+        transport->stat.send_no_enough_credit,
+        transport->stat.send_pkt,
+        transport->stat.send_bytes,
+        transport->stat.send_pkt_not_complete,
+        transport->stat.head_not_complete,
+        transport->stat.body_not_complete,
+        transport->stat.drop_transport_not_in_bundle,
+        transport->stat.drop_agent_conn_not_ready,
+        transport->stat.vacc_send_err,
+        transport->stat.vacc_recv_err);
+}
+
+void rn_tunnel_dump(rn_tunnel_t *tunnel)
+{
+    rn_printf("tunnel: n_transport %d, n_bundle %d\n",
+        tunnel->n_transport, tunnel->n_bundle);
+
+    rn_socket_mngr_dump(&(tunnel->socket_mngr), rn_tunnel_transport_dump_cb, tunnel);
+
+    rn_log("bundle list:\n");
+}
+
 int tunnel_proc_send_bundle_join(rn_tunnel_t *tunnel, rn_transport_t *transport, char src_ipstr[], uint32_t pid_at_cli)
 {
     rn_pkb_t *pkb;
@@ -534,6 +578,7 @@ static void rn_transport_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
     /* 3. recv body */
     if (transport->cur_proc_frame->cur_len < transport->frame_head->align_len) {
         left = transport->frame_head->align_len - transport->cur_proc_frame->cur_len;
+        rn_assert(left <= (int)RN_PKB_LEFTSPACE(transport->cur_proc_frame));
         /* do recv */
         ret = rn_pkb_recv(transport->cur_proc_frame, left, &(transport->socket.vacc_host));
         if (ret < 0) {

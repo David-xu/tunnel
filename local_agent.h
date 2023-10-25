@@ -92,6 +92,7 @@ int rn_agent_conn_polling_all(rn_local_agent_t *local_agent, int cycle_ms);
 
 rn_local_agent_t * rn_local_agent_create(rn_tunnel_t *tunnel, rn_epoll_thread_t *epoll_thread, rn_pkb_pool_t *pkb_pool, uint32_t n_agent_conn, int port_agent_offset);
 int rn_local_agent_destroy(rn_local_agent_t *local_agent);
+void rn_local_agent_dump(rn_local_agent_t *local_agent);
 
 
 #endif
