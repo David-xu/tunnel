@@ -180,6 +180,10 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
         goto __pkt_recv_err;
     }
 
+    rn_dbg(RUN_DBGFLAG_AGENT_CONN, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+        agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id, ret, pkb->cur_len,
+        ((uint32_t *)RN_PKB_HEAD(pkb))[0], ((uint32_t *)RN_PKB_HEAD(pkb))[1], ((uint32_t *)RN_PKB_HEAD(pkb))[2], ((uint32_t *)RN_PKB_HEAD(pkb))[3]);
+
     /* recv_buff enqueue */
     rn_assert(rn_gpfifo_enqueue_p(agent_conn->recv_fifo, pkb) == RN_RETVALUE_OK);
 
@@ -208,6 +212,7 @@ __pkt_recv_err:
     } else {
         /* maybe some err, just return */
         agent_conn->stat.vacc_recv_err++;
+        rn_assert(0);
     }
 
     return;

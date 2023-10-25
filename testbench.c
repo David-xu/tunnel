@@ -155,6 +155,22 @@ static int testbench_uninit(struct _vacc_host *vacc_host, void *opaque)
 
     return 0;
 }
+
+static void testbench_send_to_complete(vacc_host_t *vacc_host, void *buf, uint32_t len)
+{
+    uint32_t already_send = 0;
+    int ret;
+
+    while (already_send < len) {
+        ret = vacc_host_write(vacc_host, buf + already_send, len - already_send);
+        if (ret < 0) {
+            printf("########   vacc_host_write() return %d", ret);
+            while (1) usleep(10000);
+        }
+        already_send += ret;
+    }
+}
+
 #if TESTBENCH_ECHO_CHECK
 static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque, void *buf, uint32_t len)
 {
@@ -182,7 +198,9 @@ static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque,
 
     g_stop = 0;
 
-    return vacc_host_write(vacc_host, buf, len);
+    testbench_send_to_complete(vacc_host, buf, len);
+
+    return 0;
     /* just echo */
 }
 #else
@@ -191,7 +209,9 @@ static int testbench_recv_echo(struct _vacc_host *vacc_host, void *opaque, void 
     rn_log("recv len %d, echo send\n", len);
 
     /* just echo */
-    return vacc_host_write(vacc_host, buf, len);
+    testbench_send_to_complete(vacc_host, buf, len);
+
+    return 0;
 }
 #endif
 
@@ -346,13 +366,15 @@ static int testbench_client(int port, uint64_t send_len)
 
         g_payload_len_log[cnt] = pkt_head->payload_len;
 
-        if (vacc_host_write(cli, g_tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len) == VACC_HOST_RET_OK) {
-            rn_log("cnt %d, len %d\n", cnt, len);
 
-            cnt++;
+        testbench_send_to_complete(cli, g_tb_ctx.sendbuf, sizeof(testbench_pkt_head_t) + len);
 
-            usleep(100000);
-        }
+        rn_log("cnt %d, len %d\n", cnt, len);
+
+        cnt++;
+
+        usleep(100000);
+
 
         while (g_stop) {
             usleep(100000);

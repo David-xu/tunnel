@@ -757,6 +757,9 @@ static int vacc_host_recv_data(vacc_host_t *vacc_host, uint8_t *buf, int buf_len
     return ret;
 }
 
+/*
+ * return actual send len
+ */
 int vacc_host_write(vacc_host_t *vacc_host, void *buf, uint32_t len)
 {
     switch (vacc_host->insttype) {
@@ -772,6 +775,9 @@ int vacc_host_write(vacc_host_t *vacc_host, void *buf, uint32_t len)
     }
 }
 
+/*
+ * return actual send len
+ */
 int vacc_host_write_ex(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_host_addr_u *addr)
 {
     switch (vacc_host->insttype) {

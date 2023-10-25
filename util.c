@@ -617,8 +617,7 @@ int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, vacc_host_t *vacc_host)
 
 int rn_pkb_send(rn_pkb_t *pkb, int send_len, vacc_host_t *vacc_host)
 {
-    int left = RN_PKB_LEFTSPACE(pkb);
-    if (left < send_len) {
+    if ((int)pkb->cur_len < send_len) {
         return RN_RETVALUE_NOENOUGHSPACE;
     }
 

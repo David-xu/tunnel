@@ -298,8 +298,9 @@ int tunnel_proc_send_session_data(rn_tunnel_t *tunnel, rn_transport_t *transport
     session_data->dst_agent_conn_id = dst_agent_conn_id;
     session_data->idx = idx;
 
-    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, 0x%ld\n",
-        transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx);
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, idx 0x%ld: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+        transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx,
+        ((uint32_t *)(session_data + 1))[0], ((uint32_t *)(session_data + 1))[1], ((uint32_t *)(session_data + 1))[2], ((uint32_t *)(session_data + 1))[3]);
 
     return rn_transport_send(tunnel, transport, pkb, RN_TRANSPORT_FRAME_TYPE_DATA, NULL);
 }
@@ -311,8 +312,11 @@ static int tunnel_proc_recv_session_data(rn_tunnel_t *tunnel, rn_transport_t *tr
     rn_local_agent_conn_t *local_agent_conn;
     int ret;
 
-    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, 0x%ld\n",
-        transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx);
+    pkb->cur_len = frame_head->real_len;
+
+    rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, align_len 0x%x, real_len 0x%x, src_agent_conn_id %d, dst_agent_conn_id %d, idx 0x%ld: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+        transport->transport_id, frame_head->align_len, frame_head->real_len, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx,
+        ((uint32_t *)(session_data + 1))[0], ((uint32_t *)(session_data + 1))[1], ((uint32_t *)(session_data + 1))[2], ((uint32_t *)(session_data + 1))[3]);
 
     /* change len, remove public head and session data head */
     pkb->cur_off += (RN_TRANSPORT_FRAME_HEAD_LEN + sizeof(rn_protocol_pkt_session_data_t));
@@ -350,7 +354,6 @@ static int tunnel_proc_recv_session_data(rn_tunnel_t *tunnel, rn_transport_t *tr
             transport->transport_id, local_agent_conn_id, session_data->idx);
         return RN_RETVALUE_ERR;
     }
-
 
     rn_agent_conn_session_order_drain(tunnel->local_agent, local_agent_conn);
 
@@ -516,7 +519,8 @@ static void rn_transport_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
             rn_transport_invalid_frame(transport);
             return;
         }
-        if (transport->frame_head->real_len > transport->frame_head->align_len) {
+        if ((transport->frame_head->real_len > transport->frame_head->align_len)||
+            (transport->frame_head->align_len - transport->frame_head->real_len) >= RN_TRANSPORT_PROTOCOL_PKTLEN_ALIGN) {
             rn_transport_invalid_frame(transport);
             return;
         }
@@ -677,6 +681,7 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     pkb->cur_len += RN_TRANSPORT_FRAME_HEAD_LEN;
     pkb->cur_off -= RN_TRANSPORT_FRAME_HEAD_LEN;
     rn_assert(pkb->cur_len <= pkb->bufsize);
+    real_len += RN_TRANSPORT_FRAME_HEAD_LEN;
 
     header = RN_PKB_HEAD(pkb);
     header->magic = RN_TRANSPORT_PROTOCOL_MAGIC;
@@ -700,15 +705,15 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     /* send fifo enqueue */
     rn_assert(rn_gpfifo_enqueue_p(transport->send_fifo, pkb) == RN_RETVALUE_OK);
 
+    rn_dbg(RUN_DBGFLAG_TRANSPORT_DBG, "transport_id %d, type %s align_len 0x%x, real_len 0x%x\n",
+        transport->transport_id, rn_transport_frame_type_str(type), pkb->cur_len, real_len);
+
     rn_transport_send_fifo_drain(tunnel, transport);
 
     if (type == RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY) {
         /* update transport tx key */
         rn_transport_tx_enable_aes_128(transport, key_buf);
     }
-
-    rn_dbg(RUN_DBGFLAG_TRANSPORT_DBG, "transport_id %d, type %s align_len 0x%x, real_len 0x%x\n",
-        transport->transport_id, rn_transport_frame_type_str(type), pkb->cur_len, real_len);
 
     return RN_RETVALUE_OK;
 }
