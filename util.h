@@ -228,32 +228,6 @@ static inline int single_token_bucket_consume(single_token_bucket_t *stb, int n_
 }
 
 /*
- * bitmap
- */
-#define RN_BITMAP_MAGIC                 0x4d544942
-#define RN_BITMAP_NAME_MAXLEN           32
-typedef struct {
-    uint32_t        magic, id_base;
-    uint32_t        n_total, n_free;
-    uint32_t        pad[4];
-    char            name[RN_BITMAP_NAME_MAXLEN];
-    uint64_t        bm[0];              /* 1: free, 0: occupied */
-} rn_bitmap_t;
-
-#define RN_BITMAP_BMARRAY_SIZE(bm)            (((bm)->n_total + 63) / 64)
-
-int rn_bitmap_init_ex(rn_bitmap_t *bm, const char *name, uint32_t n_total, uint32_t id_base, int clear);
-#define iohub_bitmap_init(bm, name, n_total, id_base)   rn_bitmap_init_ex(bm, name, n_total, id_base, 0)
-int rn_bitmap_alloc(rn_bitmap_t *bm, uint32_t n, uint32_t *res);
-int rn_bitmap_alloc_specified(rn_bitmap_t *bm, uint32_t specified_id);
-int rn_bitmap_free(rn_bitmap_t *bm, uint32_t n, uint32_t *ids);
-int rn_bitmap_query_specified(rn_bitmap_t *bm, uint32_t specified_id);
-
-#define RN_RAW_BITMAP_SET(bm, idx)              do {((uint32_t *)bm)[(idx) / 32] |= 0x1ULL << ((idx) % 32);} while (0)
-#define RN_RAW_BITMAP_CLEAR(bm, idx)            do {((uint32_t *)bm)[(idx) / 32] &= ~(0x1ULL << ((idx) % 32));} while (0)
-#define RN_RAW_BITMAP_TEST(bm, idx)             (((uint32_t *)bm)[(idx) / 32] & (0x1ULL << ((idx) % 32)))
-
-/*
  * fifo
  */
 typedef struct {

@@ -184,7 +184,7 @@ static int testbench_recv_echo_check(struct _vacc_host *vacc_host, void *opaque,
 
     rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
-    // fgfw_hexdump(buf, len);
+    // rn_hexdump(buf, len);
     rn_assert(cnt == head->cnt);
     rn_assert(head->magic == TESTBENCH_PKT_MAGIC);
 
@@ -229,7 +229,7 @@ static int testbench_recv_noecho(struct _vacc_host *vacc_host, void *opaque, voi
 
     rn_assert(len == (head->payload_len + sizeof(testbench_pkt_head_t)));
 
-    // fgfw_hexdump(buf, len);
+    // rn_hexdump(buf, len);
     rn_assert(cnt == head->cnt);
     rn_assert(head->magic == TESTBENCH_PKT_MAGIC);
     rn_assert(head->payload_len == g_payload_len_log[cnt]);
