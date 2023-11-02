@@ -1,4 +1,5 @@
 #include "pub.h"
+#include "testbench.h"
 
 running_ctx_t g_ctx;
 

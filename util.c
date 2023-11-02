@@ -216,18 +216,6 @@ int rn_printf(const char *fmt, ...)
     return n;
 }
 
-void rn_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
-    AES_KEY aes_key;
-    AES_set_encrypt_key(key, 128, &aes_key);
-    AES_ecb_encrypt(input, output, &aes_key, AES_ENCRYPT);
-}
-
-void rn_aes_decrypt(const unsigned char *key, const unsigned char *input, unsigned char *output) {
-    AES_KEY aes_key;
-    AES_set_decrypt_key(key, 128, &aes_key);
-    AES_ecb_encrypt(input, output, &aes_key, AES_DECRYPT);
-}
-
 #define STDIVCTRL_EMPTYSUBSTR  1
 
 int rn_stdiv

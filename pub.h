@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <getopt.h> /*getopt_long() */
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
@@ -13,11 +14,16 @@
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#ifdef WITH_OPENSSL_LIB
 #include <openssl/aes.h>
+#else
+#include "aes_wrapper.h"
+#endif
+#if 0
 #include <xmmintrin.h>
 #include <emmintrin.h>
 #include <immintrin.h>
-
+#endif
 #define RN_CONFIG_PKB_SIZE                  (4 * 1024)
 #define RN_CONFIG_MAX_PKB_NUM               (4096)
 #define RN_CONFIG_TOKEN_FILL_CYCLE_MS       1
@@ -49,7 +55,6 @@ typedef int rn_local_agent_conn_id;
 #include "epoll_worker.h"
 #include "tunnel.h"
 #include "local_agent.h"
-#include "testbench.h"
 
 typedef struct {
     volatile int    running;

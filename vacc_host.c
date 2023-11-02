@@ -226,7 +226,7 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
     case VACC_HOST_INSTTYPE_SERVER_INST:
         /* new client need accept */
         len = sizeof(cli_un);
-        vacc_host->sock_fd = accept(param->u.uds.server_listener->sock_fd, (__SOCKADDR_ARG)&cli_un, (socklen_t *)&len);
+        vacc_host->sock_fd = accept(param->u.uds.server_listener->sock_fd, (struct sockaddr*)&cli_un, (socklen_t *)&len);
         if (vacc_host->sock_fd > 0) {
             /* new connection */
             // printf("new connection...\n");

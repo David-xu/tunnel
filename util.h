@@ -141,24 +141,6 @@ int time_string_now_raw(char *buf);
 
 uint32_t rn_crc32c_sw(const void *data, uint64_t length);
 int rn_printf(const char *fmt, ...);
-void rn_aes_encrypt(const unsigned char *key, const unsigned char *input, unsigned char *output);
-void rn_aes_decrypt(const unsigned char *key, const unsigned char *input, unsigned char *output);
-
-/*
- * ret: 1 --> overlap
- */
-static inline int rn_isrange_overlap(__uint128_t begin1, __uint128_t size1, __uint128_t begin2, __uint128_t size2)
-{
-    __uint128_t begin = begin1 < begin2 ? begin1 : begin2;
-    __uint128_t end1, end2, end;
-    end1 = begin1 + size1;
-    end2 = begin2 + size2;
-    end = end1 > end2 ? end1 : end2;
-    if ((end - begin) < (size1 + size2)) {
-        return 1;
-    }
-    return 0;
-}
 
 static inline char rn_n2c(uint32_t v)
 {
