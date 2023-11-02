@@ -35,13 +35,13 @@
 } while (0)
 
 #define rn_log(fmt, args...) do { \
-        rn_printf("[LOG] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+        rn_printf("[LOG] %-24s %4d: " fmt, __FUNCTION__, __LINE__, ##args); \
     } while(0)
 #define rn_warn(fmt, args...) do { \
-        rn_printf("[WARN] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+        rn_printf("[WARN] %-24s %4d: " fmt, __FUNCTION__, __LINE__, ##args); \
     } while(0)
 #define rn_err(fmt, args...) do { \
-        rn_printf("[ERR] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+        rn_printf("[ERR] %-24s %4d: " fmt, __FUNCTION__, __LINE__, ##args); \
     } while(0)
 
 extern uint64_t g_dbgprint_flag;
@@ -52,7 +52,7 @@ extern uint64_t g_dbgprint_flag;
 #define RUN_DBGFLAG_TRANSPORT_DBG                           (0x1 << 3)
 #define rn_dbg(flag, fmt, args...) do { \
         if (g_dbgprint_flag & flag) { \
-            rn_printf("[DBG] %-24s %4d: "fmt, __FUNCTION__, __LINE__, ##args); \
+            rn_printf("[DBG] %-24s %4d: " fmt, __FUNCTION__, __LINE__, ##args); \
         } \
     } while(0)
 
@@ -233,7 +233,7 @@ static inline int rn_gpfifo_enqueue(rn_gpfifo_t *gpfifo, void *data, uint32_t le
         return RN_RETVALUE_NOENOUGHRES;
     }
 
-    buf = (void *)(gpfifo + 1) + (gpfifo->tail % gpfifo->depth) * gpfifo->element_size;
+    buf = RN_V2P(RN_P2V(gpfifo + 1) + (gpfifo->tail % gpfifo->depth) * gpfifo->element_size);
     memcpy(buf, data, cp_len);
 
     gpfifo->tail++;
@@ -252,7 +252,7 @@ static inline int rn_gpfifo_dequeue(rn_gpfifo_t *gpfifo, void *data, uint32_t le
         return RN_RETVALUE_EMPTY;
     }
 
-    buf = (void *)(gpfifo + 1) + (gpfifo->head % gpfifo->depth) * gpfifo->element_size;
+    buf = RN_V2P(RN_P2V(gpfifo + 1) + (gpfifo->head % gpfifo->depth) * gpfifo->element_size);
     memcpy(data, buf, cp_len);
 
     gpfifo->head++;
@@ -271,7 +271,7 @@ static inline int rn_gpfifo_peek(rn_gpfifo_t *gpfifo, void *data, uint32_t len)
         return RN_RETVALUE_EMPTY;
     }
 
-    buf = (void *)(gpfifo + 1) + (gpfifo->head % gpfifo->depth) * gpfifo->element_size;
+    buf = RN_V2P(RN_P2V(gpfifo + 1) + (gpfifo->head % gpfifo->depth) * gpfifo->element_size);
     memcpy(data, buf, cp_len);
 
     return RN_RETVALUE_OK;
@@ -380,7 +380,7 @@ typedef struct {
 static inline rn_reorder_t *rn_reorder_create(uint32_t window_size)
 {
     rn_reorder_t *reorder;
-    reorder = malloc(sizeof(rn_reorder_t) + window_size * sizeof(void *));
+    reorder = (rn_reorder_t *)malloc(sizeof(rn_reorder_t) + window_size * sizeof(void *));
     rn_assert(reorder != NULL);
     rn_assert((window_size & (window_size - 1)) == 0);
     memset(reorder, 0, sizeof(rn_reorder_t) + window_size * sizeof(void *));
