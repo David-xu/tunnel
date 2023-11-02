@@ -2,13 +2,23 @@
 
 running_ctx_t g_ctx;
 
+static int tb_insert_timer_1ms(void *param)
+{
+    running_ctx_t *ctx = (running_ctx_t *)param;
+
+    rn_tunnel_transport_polling_all(ctx->tunnel, RN_CONFIG_TOKEN_FILL_CYCLE_MS);
+    rn_agent_conn_polling_all(ctx->local_agent, RN_CONFIG_TOKEN_FILL_CYCLE_MS);
+
+    return 0;
+}
+
 void mainfunc_init(void)
 {
     /* set default key */
     memset(g_ctx.default_key, 0, sizeof(g_ctx.default_key));
     strncpy((char *)g_ctx.default_key, "abcd01234567ef", sizeof(g_ctx.default_key));
 
-    strncpy(g_ctx.serv_ip, "127.0.0.1", sizeof(g_ctx.serv_ip));
+    strncpy(g_ctx.serv_ip, "8.218.56.30", sizeof(g_ctx.serv_ip));
     g_ctx.n_port = 4;
     g_ctx.port_list[0] = 40000;
     g_ctx.port_list[1] = 40001;
@@ -76,4 +86,7 @@ void mainfunc_client_run(void)
 
     /* set local_agent in tunnel */
     ctx->tunnel->local_agent = ctx->local_agent;
+
+    g_ctx.transport_polling_timer_id = rn_timerfw_add_timer(&(g_ctx.epoll_thread), 1000, RN_CONFIG_TOKEN_FILL_CYCLE_MS * 1000, tb_insert_timer_1ms, &g_ctx);
+    rn_assert(g_ctx.transport_polling_timer_id >= 0);
 }
