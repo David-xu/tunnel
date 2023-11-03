@@ -81,7 +81,7 @@ void mainfunc_client_run(void)
     ctx->local_agent = rn_local_agent_create(ctx->tunnel, &(ctx->epoll_thread), ctx->pkb_pool, RN_CONFIG_MAX_AGENT_CONN_CLIENT, ctx->port_agent_offset);
     /* create all listener */
     for (i = 0; i < ctx->n_local_agent_port; i++) {
-        rn_socket_mngr_listen_add(&(ctx->local_agent->socket_mngr), "127.0.01", ctx->local_agent_port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
+        rn_socket_mngr_listen_add(&(ctx->local_agent->socket_mngr), "127.0.0.1", ctx->local_agent_port_list[i], RN_CONFIG_SOCKET_BUF_SIZE);
     }
 
     /* set local_agent in tunnel */
