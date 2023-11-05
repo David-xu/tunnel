@@ -195,7 +195,7 @@ uint32_t rn_crc32c_sw(const void *data, uint64_t length)
 }
 
 // uint64_t g_dbgprint_flag = 0xffffffffffffffffull;
-uint64_t g_dbgprint_flag = 1;
+uint64_t g_dbgprint_flag = 0;
 
 int rn_printf(const char *fmt, ...)
 {
@@ -406,7 +406,7 @@ int rn_pkb_pool_destroy(rn_pkb_pool_t *pkb_pool)
     return RN_RETVALUE_OK;
 }
 
-rn_pkb_t *rn_pkb_pool_get_pkb(rn_pkb_pool_t *pkb_pool)
+rn_pkb_t *rn_pkb_pool_get_pkb_ex(rn_pkb_pool_t *pkb_pool, const char *func, int line)
 {
     rn_pkb_t *pkb = rn_gpfifo_dequeue_p(pkb_pool->free_pkt_fifo);
 
@@ -416,9 +416,16 @@ rn_pkb_t *rn_pkb_pool_get_pkb(rn_pkb_pool_t *pkb_pool)
 
     rn_assert(pkb->bufsize == pkb_pool->bufsize);
 
+    rn_assert((pkb->pkb_flag & PN_PKB_FLAG_ALREADY_FREE) == 1);
+
     pkb->pkb_flag &= ~PN_PKB_FLAG_ALREADY_FREE;
     pkb->cur_off = RN_PKB_OVERHEAD;
     pkb->cur_len = 0;
+
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+    pkb->call_func = func;
+    pkb->call_linenum = line;
+#endif
 
     return pkb;
 }
@@ -439,6 +446,40 @@ int rn_pkb_pool_put_pkb(rn_pkb_pool_t *pkb_pool, rn_pkb_t *pkb)
 
     return rn_gpfifo_enqueue_p(pkb_pool->free_pkt_fifo, pkb);
 }
+
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+void rn_pkb_pool_dump(rn_pkb_pool_t *pkb_pool)
+{
+    uint32_t i, total_free, cnt;
+    uint32_t total_pkb_num = pkb_pool->total_pkb_num;
+    uint32_t one_pkb_size = (sizeof(rn_pkb_t) + pkb_pool->bufsize);
+    uint8_t bm[total_pkb_num];
+    rn_pkb_t *pkb;
+    rn_transport_frame_head_t *frame_head;
+
+    total_free = RN_GPFIFO_CUR_LEN(pkb_pool->free_pkt_fifo);
+    memset(bm, 0, sizeof(bm));
+    for (i = 0; i < total_free; i++) {
+        pkb = rn_gpfifo_dequeue_p(pkb_pool->free_pkt_fifo);
+        bm[pkb->idx] = 1;
+        rn_gpfifo_enqueue_p(pkb_pool->free_pkt_fifo, pkb);
+    }
+    rn_log("pkb pool total %d not free:\n", RN_GPFIFO_CUR_LEFT(pkb_pool->free_pkt_fifo));
+    cnt = 0;
+    for (i = 0; i < total_pkb_num; i++) {
+        if (bm[i] == 1) {
+            continue;
+        }
+        pkb = (void *)(pkb_pool + 1) + i * one_pkb_size;
+        frame_head = RN_PKB_HEAD(pkb);
+        rn_log("\tidx %d, %s:%d, pkt_type %d, cur_len %d, real_len %d\n",
+            pkb->idx, pkb->call_func, pkb->call_linenum, frame_head->type, frame_head->align_len, frame_head->real_len);
+
+        cnt++;
+    }
+    rn_assert(cnt == RN_GPFIFO_CUR_LEFT(pkb_pool->free_pkt_fifo));
+}
+#endif
 
 int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, vacc_host_t *vacc_host)
 {

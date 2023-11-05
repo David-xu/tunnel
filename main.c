@@ -365,7 +365,14 @@ int main(int argc, char *argv[])
     rn_assert(g_ctx.epoll_thread.n_timer == 0);
     rn_epoll_thread_destroy(&(g_ctx.epoll_thread));
 
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+    if (!RN_GPFIFO_ISFULL(g_ctx.pkb_pool->free_pkt_fifo)) {
+        rn_pkb_pool_dump(g_ctx.pkb_pool);
+    }
+#else
     rn_assert(RN_GPFIFO_ISFULL(g_ctx.pkb_pool->free_pkt_fifo));
+#endif
+
     rn_pkb_pool_destroy(g_ctx.pkb_pool);
 
     rn_log("exit...\n");

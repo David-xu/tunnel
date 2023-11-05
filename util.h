@@ -50,6 +50,7 @@ extern uint64_t g_dbgprint_flag;
 #define RUN_DBGFLAG_AGENT_CONN_DUMPDATA                     (0x1 << 1)
 #define RUN_DBGFLAG_PROTOCOL_DUMP                           (0x1 << 2)
 #define RUN_DBGFLAG_TRANSPORT_DBG                           (0x1 << 3)
+#define RUN_DBGFLAG_TRANSPORT_DROP_DBG                      (0x1 << 4)
 #define rn_dbg(flag, fmt, args...) do { \
         if (g_dbgprint_flag & flag) { \
             rn_printf("[DBG] %-24s %4d: " fmt, __FUNCTION__, __LINE__, ##args); \
@@ -341,6 +342,9 @@ typedef struct {
     void        *bufhead;
 
 #ifdef RN_CONFIG_PKBPOOL_CHECK
+    const char  *call_func;
+    int         call_linenum;
+
     struct _rn_pkb_pool     *pkb_pool;
     uint32_t    idx;
 #endif
@@ -363,8 +367,12 @@ typedef struct _rn_pkb_pool {
 
 rn_pkb_pool_t * rn_pkb_pool_create(uint32_t total_pkb_num, uint32_t bufsize);
 int rn_pkb_pool_destroy(rn_pkb_pool_t *pkb_pool);
-rn_pkb_t *rn_pkb_pool_get_pkb(rn_pkb_pool_t *pkb_pool);
+rn_pkb_t *rn_pkb_pool_get_pkb_ex(rn_pkb_pool_t *pkb_pool, const char *func, int line);
+#define rn_pkb_pool_get_pkb(pkb_pool)       rn_pkb_pool_get_pkb_ex(pkb_pool, __FUNCTION__, __LINE__)
 int rn_pkb_pool_put_pkb(rn_pkb_pool_t *pkb_pool, rn_pkb_t *pkb);
+#ifdef RN_CONFIG_PKBPOOL_CHECK
+void rn_pkb_pool_dump(rn_pkb_pool_t *pkb_pool);
+#endif
 struct _vacc_host;
 int rn_pkb_recv(rn_pkb_t *pkb, int recv_len, struct _vacc_host *vacc_host);
 int rn_pkb_send(rn_pkb_t *pkb, int send_len, struct _vacc_host *vacc_host);
@@ -397,7 +405,7 @@ static inline void rn_reorder_destroy(rn_reorder_t *reorder)
 }
 
 static inline int rn_reorder_get_entry(rn_reorder_t *reorder, uint64_t idx, void **p) {
-    uint64_t i = reorder->next_idx & (reorder->window_size - 1);
+    uint64_t i = idx & (reorder->window_size - 1);
     rn_assert(p != NULL);
     void *ret_v;
 
@@ -485,7 +493,7 @@ typedef int (*rn_socket_uninit_cb)(struct _rn_socket_mngr *mngr, rn_socket_publi
 typedef struct _rn_socket_mngr {
     uint32_t        unit_num;
     uint32_t        unit_size;          /* size of struct which contain rn_socket_public_t */
-    rn_gpfifo_t     *free_fifo;
+    rn_gpfifo_t     *free_fifo;         /* free socket instance pool */
     rn_socket_public_t      *socket_list;
 
     rn_socket_init_cb       socket_init;

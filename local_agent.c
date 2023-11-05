@@ -254,7 +254,7 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
     }
 
     rn_dbg(
-RUN_DBGFLAG_AGENT_CONN_DUMPDATA, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+        RUN_DBGFLAG_AGENT_CONN_DUMPDATA, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
         agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id, ret, pkb->cur_len,
         ((uint32_t *)RN_PKB_HEAD(pkb))[0], ((uint32_t *)RN_PKB_HEAD(pkb))[1], ((uint32_t *)RN_PKB_HEAD(pkb))[2], ((uint32_t *)RN_PKB_HEAD(pkb))[3]);
 

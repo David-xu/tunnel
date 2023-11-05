@@ -31,6 +31,8 @@ a)协商密钥
 ./rottenNut --mode=server --serv_ip=127.0.0.1 --tunnel_default_key=0x1234abcd5678ef9097530864ace345bf --port_list=40000,40001,50002,50003 --transport_send_bps=100000
 ./rottenNut --mode=server --serv_ip=127.0.0.1 --port_list=40000,40001,50002,50003 --transport_send_bps=100000
 
+8.218.56.30
+
 # 测试
 ./rottenNut --testbench=0 --mode=server --local_agent_port_list=3000
 ./rottenNut --testbench=0 --mode=client --local_agent_port_list=3000 --len=10000000

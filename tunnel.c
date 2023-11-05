@@ -314,7 +314,8 @@ static int tunnel_proc_recv_session_del(rn_tunnel_t *tunnel, rn_transport_t *tra
 
     local_agent_conn = rn_local_agent_get_conn(tunnel->local_agent, local_agent_conn_id);
 
-    if (local_agent_conn->socket.vacc_host.insttype != VACC_HOST_INSTTYPE_CLIENT_INST) {
+    if ((local_agent_conn->socket.vacc_host.insttype != VACC_HOST_INSTTYPE_SERVER_INST) &&
+        (local_agent_conn->socket.vacc_host.insttype != VACC_HOST_INSTTYPE_CLIENT_INST)) {
         rn_err("transport_id %d, bundle_id %d, session_del_req->src_agent_conn_id %d, session_del_req->dst_agent_conn_id %d, insttype %d, can't del\n",
             transport->transport_id, bundle_id, session_del_req->src_agent_conn_id, session_del_req->dst_agent_conn_id, local_agent_conn->socket.vacc_host.insttype);
         return RN_RETVALUE_OK;
@@ -376,7 +377,7 @@ static int tunnel_proc_recv_session_data(rn_tunnel_t *tunnel, rn_transport_t *tr
         /* need drop pkt */
         transport->stat.drop_agent_conn_not_ready++;
 
-        rn_err("transport id %d, agent_conn id %d, agent_conn_state %d, drop session data.\n",
+        rn_dbg(RUN_DBGFLAG_TRANSPORT_DROP_DBG, "transport id %d, agent_conn id %d, agent_conn_state %d, drop session data.\n",
             transport->transport_id, local_agent_conn_id, local_agent_conn->agent_conn_state);
         return RN_RETVALUE_ERR;
     }
