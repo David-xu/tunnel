@@ -39,7 +39,7 @@ typedef struct _rn_local_agent_conn_t {
 
         uint64_t            vacc_send_err, vacc_recv_err;
 
-        uint64_t            dest_transport_send_fifo_full;
+        uint64_t            dest_transport_send_fifo_afull;
     } stat;
 } rn_local_agent_conn_t;
 

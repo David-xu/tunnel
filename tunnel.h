@@ -103,9 +103,10 @@ typedef struct {
 /*
  * tunnel mngr
  */
-#define RN_CONFIG_TRANSPORT_SEND_FIFO_DEPTH         4
-#define RN_CONFIG_TRANSPORT_BKT_MAX_BURST           (RN_CONFIG_TRANSPORT_FRAME_MAXLEN * 2)          /* max burst 2 pkt */
-#define RN_CONFIG_TUNNEL_BUNDLE_MAX                 16
+#define RN_CONFIG_TRANSPORT_SEND_FIFO_DEPTH             8
+#define RN_CONFIG_TRANSPORT_SEND_FIFO_CONTROL_PKT_QUOTA (RN_CONFIG_TRANSPORT_SEND_FIFO_DEPTH / 2)   /* reserve for control pkt */
+#define RN_CONFIG_TRANSPORT_BKT_MAX_BURST               (RN_CONFIG_TRANSPORT_FRAME_MAXLEN * 2)      /* max burst 2 pkt */
+#define RN_CONFIG_TUNNEL_BUNDLE_MAX                     16
 
 struct _rn_tunnel;
 

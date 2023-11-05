@@ -342,6 +342,9 @@ int tunnel_proc_send_session_data(rn_tunnel_t *tunnel, rn_transport_t *transport
     session_data->dst_agent_conn_id = dst_agent_conn_id;
     session_data->idx = idx;
 
+    /* data need to consume bucket token */
+    pkb->pkb_flag |= PN_PKB_FLAG_NEED_BKT_TOKEN;
+
     rn_dbg(RUN_DBGFLAG_PROTOCOL_DUMP, "transport_id %d, src_agent_conn_id %d, dst_agent_conn_id %d, idx 0x%ld: 0x%08x 0x%08x 0x%08x 0x%08x\n",
         transport->transport_id, session_data->src_agent_conn_id, session_data->dst_agent_conn_id, session_data->idx,
         ((uint32_t *)(session_data + 1))[0], ((uint32_t *)(session_data + 1))[1], ((uint32_t *)(session_data + 1))[2], ((uint32_t *)(session_data + 1))[3]);
@@ -642,8 +645,14 @@ static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *tr
         if (pkb == NULL) {
             break;
         }
-        /* calc credit */
-        send_len_permit = single_token_bucket_consume(&(transport->send_stb), pkb->cur_len);
+        if (pkb->pkb_flag & PN_PKB_FLAG_NEED_BKT_TOKEN) {
+            /* calc credit */
+            send_len_permit = single_token_bucket_consume(&(transport->send_stb), pkb->cur_len);
+        } else {
+            /* don't comsume bucket token, just send */
+            send_len_permit = pkb->cur_len;
+        }
+
         if (send_len_permit) {
             /* do send */
             ret = rn_pkb_send(pkb, send_len_permit, &(transport->socket.vacc_host));

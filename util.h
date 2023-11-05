@@ -219,6 +219,7 @@ typedef struct {
     uint32_t            rsv[4];
 } rn_gpfifo_t;
 #define RN_GPFIFO_CUR_LEN(gpfifo)       ((gpfifo)->tail - (gpfifo)->head)
+#define RN_GPFIFO_CUR_LEFT(gpfifo)      ((gpfifo)->depth - RN_GPFIFO_CUR_LEN(gpfifo))
 #define RN_GPFIFO_ISEMPTY(gpfifo)       (RN_GPFIFO_CUR_LEN(gpfifo) == 0)
 #define RN_GPFIFO_ISFULL(gpfifo)        (RN_GPFIFO_CUR_LEN(gpfifo) == (gpfifo)->depth)
 
@@ -332,6 +333,7 @@ int rn_gpfifo_destroy(rn_gpfifo_t *gpfifo);
  */
 #define RN_PKB_OVERHEAD                     (64)
 #define PN_PKB_FLAG_ALREADY_FREE            1
+#define PN_PKB_FLAG_NEED_BKT_TOKEN          2
 
 struct _rn_pkb_pool;
 typedef struct {

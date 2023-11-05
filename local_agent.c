@@ -9,7 +9,7 @@ struct {
 
     uint64_t            vacc_send_err, vacc_recv_err;
 
-    uint64_t            dest_transport_send_fifo_full;
+    uint64_t            dest_transport_send_fifo_afull;
 } stat;
 
 
@@ -42,7 +42,7 @@ static void rn_agent_conn_dump_cb(rn_socket_public_t *socket, void *dump_p)
         agent_conn->stat.send_pkt_not_complete,
         agent_conn->stat.vacc_send_err,
         agent_conn->stat.vacc_recv_err,
-        agent_conn->stat.dest_transport_send_fifo_full);
+        agent_conn->stat.dest_transport_send_fifo_afull);
 
     if (agent_conn->session_pkt_reorder) {
         uint64_t idx_list[agent_conn->session_pkt_reorder->window_size];
@@ -142,9 +142,9 @@ static int rn_agent_conn_dispatch(rn_local_agent_t *local_agent, rn_local_agent_
         transport_id = rn_tunnel_bundle_transport_select(local_agent->tunnel, agent_conn->bundle_id);
         transport = rn_tunnel_get_transport(local_agent->tunnel, transport_id);
 
-        if (RN_GPFIFO_ISFULL(transport->send_fifo)) {
+        if (RN_GPFIFO_CUR_LEFT(transport->send_fifo) < RN_CONFIG_TRANSPORT_SEND_FIFO_CONTROL_PKT_QUOTA) {   
             /* can't do dispatch */
-            agent_conn->stat.dest_transport_send_fifo_full++;
+            agent_conn->stat.dest_transport_send_fifo_afull++;
             break;
         }
 
@@ -253,7 +253,8 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
         goto __pkt_recv_err;
     }
 
-    rn_dbg(RUN_DBGFLAG_AGENT_CONN_DUMPDATA, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+    rn_dbg(
+RUN_DBGFLAG_AGENT_CONN_DUMPDATA, "agent_conn id %d, peer conn id %d, ret %d, pkb->cur_len %d, recv data: 0x%08x 0x%08x 0x%08x 0x%08x\n",
         agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id, ret, pkb->cur_len,
         ((uint32_t *)RN_PKB_HEAD(pkb))[0], ((uint32_t *)RN_PKB_HEAD(pkb))[1], ((uint32_t *)RN_PKB_HEAD(pkb))[2], ((uint32_t *)RN_PKB_HEAD(pkb))[3]);
 
