@@ -54,15 +54,10 @@ static void termsig_handler(int signal, siginfo_t *info, void *c)
     g_ctx.kill_pid = info->si_pid;
     g_ctx.running = 0;
 }
-static void termsig_handler_pipe(int signal, siginfo_t *info, void *c)
-{
-    g_ctx.sigpipe_cnt++;
-}
 
-static void setup_signal_handling(void)
+static void setup_signal_term_handling(void)
 {
     struct sigaction act;
-    struct sigaction actpipe;
 
     memset(&act, 0, sizeof(act));
     act.sa_sigaction = termsig_handler;
@@ -70,6 +65,16 @@ static void setup_signal_handling(void)
     sigaction(SIGINT,  &act, NULL);
     sigaction(SIGHUP,  &act, NULL);
     sigaction(SIGTERM, &act, NULL);
+}
+
+static void termsig_handler_pipe(int signal, siginfo_t *info, void *c)
+{
+    g_ctx.sigpipe_cnt++;
+}
+
+static void setup_signal_pipe_handling(void)
+{
+    struct sigaction actpipe;
 
     memset(&actpipe, 0, sizeof(actpipe));
     actpipe.sa_sigaction = termsig_handler_pipe;
@@ -312,6 +317,8 @@ int main(int argc, char *argv[])
 
     srand(time(0));
 
+    setup_signal_pipe_handling();
+
     if (testbench) {
         if ((g_ctx.mode == RN_WORKMODE_SERVER) || (g_ctx.mode == RN_WORKMODE_CLIENT)) {
             if (g_ctx.n_local_agent_port == 0) {
@@ -325,7 +332,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    setup_signal_handling();
+    setup_signal_term_handling();
 
     /* create epoll_thread */
     rn_assert(rn_epoll_thread_create(&(g_ctx.epoll_thread)) == RN_RETVALUE_OK);

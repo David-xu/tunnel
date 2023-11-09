@@ -34,7 +34,7 @@ typedef struct _rn_local_agent_conn_t {
         uint64_t            session_not_ok;
         uint64_t            recv_fifo_full;
         uint64_t            no_free_pkb;
-
+        uint64_t            recv_pkt, recv_bytes;
         uint64_t            send_pkt, send_bytes, send_pkt_not_complete;
 
         uint64_t            vacc_send_err, vacc_recv_err;

@@ -44,6 +44,25 @@ static void vacc_host_setsockbuf_size(vacc_host_t *vacc_host, int recvbuf_size, 
     }
 }
 
+static int vacc_host_set_noblock_socket(vacc_host_t *vacc_host)
+{
+    int sockfd = vacc_host->sock_fd;
+
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (flags == -1) {
+        printf("fd %d fcntl F_GETFL faild, errno %d\n", sockfd, errno);
+        return VACC_HOST_RET_ERR;
+    }
+
+    flags |= O_NONBLOCK;
+    if (fcntl(sockfd, F_SETFL, flags) == -1) {
+        printf("fd %d fcntl F_SETFL faild, errno %d\n", sockfd, errno);
+        return VACC_HOST_RET_ERR;
+    }
+
+    return VACC_HOST_RET_OK;
+}
+
 static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_param_t *param)
 {
     int ret, len, on;
@@ -94,6 +113,7 @@ static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_p
         }
 
         vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+        vacc_host_set_noblock_socket(vacc_host);
 
         /* build relation to listen socket */
         vacc_host->server_listener = param->u.uds.server_listener;
@@ -120,6 +140,8 @@ static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_p
             close(vacc_host->sock_fd);
             return VACC_HOST_RET_CONNECT_FAILD;
         }
+
+        vacc_host_set_noblock_socket(vacc_host);
 
         break;
     default:
@@ -148,6 +170,7 @@ static int vacc_host_create_udp(vacc_host_t *vacc_host, const vacc_host_create_p
         setsockopt(vacc_host->sock_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 
         vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+        vacc_host_set_noblock_socket(vacc_host);
 
         memset(&srv_addr, 0, sizeof(srv_addr));
         srv_addr.sin_family = AF_INET;
@@ -181,6 +204,8 @@ static int vacc_host_create_udp(vacc_host_t *vacc_host, const vacc_host_create_p
             close(vacc_host->sock_fd);
             return VACC_HOST_RET_CONNECT_FAILD;
         }
+
+        vacc_host_set_noblock_socket(vacc_host);
 
         break;
     default:
@@ -235,6 +260,7 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
         }
 
         vacc_host_setsockbuf_size(vacc_host, param->recvbuf_size, param->sendbuf_size);
+        vacc_host_set_noblock_socket(vacc_host);
 
         /* build relation to listen socket */
         vacc_host->server_listener = param->u.uds.server_listener;
@@ -260,6 +286,8 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
             close(vacc_host->sock_fd);
             return VACC_HOST_RET_CONNECT_FAILD;
         }
+
+        vacc_host_set_noblock_socket(vacc_host);
 
         break;
     default:
@@ -431,20 +459,22 @@ __retry_recv_head:
         retry_cnt = 10000;
 retry:
         ret = read(vacc_host->sock_fd, buf + vacc_host->proto_abs.head_len + already_recv_len, need_recv_len);
+        if (ret == 0) {
+            return VACC_HOST_RET_PEERCLOSE;
+        }
         if (ret < 0) {
             if ((errno == EINTR) || (errno == EAGAIN)) {
                 usleep(100);
                 goto retry;
-            } else if (errno == ECONNRESET) {
+            } else if ((errno == ECONNRESET) || (errno == EPIPE)) {
                 /* peer close, just return 0 */
                 return VACC_HOST_RET_PEERCLOSE;
+            } else {
+                printf("!!!!!!!!!!!!!! read() ret %d \n", ret);
+                return VACC_HOST_RET_READMSG_FAILD;
             }
         }
-        if (ret <= 0) {
-            printf("!!!!!!!!!!!!!! ret %d \n", ret);
-            while (1) usleep(100000);
-            return VACC_HOST_RET_READMSG_FAILD;
-        }
+
         already_recv_len += ret;
         need_recv_len -= ret;
         if (already_recv_len != (int)payload_len) {
@@ -477,17 +507,18 @@ static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host, uint
         buf_len = sizeof(local_buf);
     }
 
-retry:
     ret = read(vacc_host->sock_fd, buf, buf_len);
     if (ret == 0) {
         return VACC_HOST_RET_PEERCLOSE;
     } else if (ret < 0) {
-        if ((errno == EINTR) || (errno == EAGAIN)) {
-            usleep(100);
-            goto retry;
+        if (errno == EINTR) {
+            printf("dead ....... fd %d, errno EINTR\n", vacc_host->sock_fd);
+            while (1) usleep(100000);
         } else if (errno == ECONNRESET) {
             /* peer close, just return 0 */
             return VACC_HOST_RET_PEERCLOSE;
+        } else if (errno == EAGAIN) {
+            /**/
         } else {
             printf("read return %d, dead.\n", ret);
             while (1) usleep(100000);
@@ -653,6 +684,8 @@ int vacc_host_destroy(vacc_host_t *vacc_host)
 
     cb_put(vacc_host, opaque);
 
+    vacc_host->sock_fd = -1;
+
     return ret;
 }
 
@@ -694,6 +727,9 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
  */
 static void vacc_host_disconnect(vacc_host_t *vacc_host)
 {
+    if (vacc_host->sock_fd < 0) {
+        return;
+    }
     vacc_host_destroy(vacc_host);
 }
 

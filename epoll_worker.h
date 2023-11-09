@@ -1,6 +1,7 @@
 #ifndef _EPOLL_WORKER_H_
 #define _EPOLL_WORKER_H_
 
+#define RN_CONFIG_EPOLL_WORKER_CHECK
 #define RN_EPOLL_THREAD_MAX_INST_IN_SUBPROC_CRTHREAD                (2 * 1024)
 typedef struct _rn_epoll_inst {
     /* set by epoll thread framework */
@@ -38,7 +39,14 @@ typedef struct _rn_epoll_thread {
 
     int                     n_timer;
     rn_timerfw_timer_t      timer_list[RN_TIMERFW_MAXTIMER];
+
+    int                     ready_fd_list_need_check;
 } rn_epoll_thread_t;
+
+#ifdef RN_CONFIG_EPOLL_WORKER_CHECK
+int epoll_thread_is_inst_in_epoll(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *epoll_inst);
+int epoll_thread_is_fd_in_epoll(rn_epoll_thread_t *epoll_thread, int fd);
+#endif
 
 int rn_epoll_thread_create(rn_epoll_thread_t *epoll_thread);
 int rn_epoll_thread_destroy(rn_epoll_thread_t *epoll_thread);

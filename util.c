@@ -651,7 +651,8 @@ static int rn_socket_mngr_init(struct _vacc_host *vacc_host, void *opaque)
         mngr->n_client_inst++;
         break;
     default:
-        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_err("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_assert(0);
         return -1;
     }
 
@@ -666,6 +667,7 @@ static int rn_socket_mngr_uninit(struct _vacc_host *vacc_host, void *opaque)
 {
     rn_socket_mngr_t *mngr = (rn_socket_mngr_t *)opaque;
     rn_socket_public_t *socket = RN_GETCONTAINER(vacc_host, rn_socket_public_t, vacc_host);
+    int fd = vacc_host->sock_fd;
 
     if (mngr->socket_uninit) {
         mngr->socket_uninit(mngr, socket, mngr->cb_param);
@@ -676,34 +678,35 @@ static int rn_socket_mngr_uninit(struct _vacc_host *vacc_host, void *opaque)
 
     switch (vacc_host->insttype) {
     case VACC_HOST_INSTTYPE_SERVER_LISTENER:
-        rn_log("%s listen socket uninit, conn_id %d\n",
+        rn_log("%s listen socket uninit, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, fd);
         mngr->n_listen--;
         break;
     case VACC_HOST_INSTTYPE_SERVER_INST:
-        rn_log("%s server inst disconnect, conn_id %d\n",
+        rn_log("%s server inst disconnect, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, fd);
         mngr->n_srv_inst--;
         break;
     case VACC_HOST_INSTTYPE_CLIENT_INST:
-        rn_log("%s client inst disconnect, conn_id %d\n",
+        rn_log("%s client inst disconnect, conn_id %d, fd %d\n",
             vacc_host->transtype == VACC_HOST_TRANSTYPE_TCP ? "TCP" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDS ? "UDS" :
             vacc_host->transtype == VACC_HOST_TRANSTYPE_UDP ? "UDP" :
             "UNKNOWN",
-            socket->conn_id);
+            socket->conn_id, fd);
         mngr->n_client_inst--;
         break;
     default:
-        rn_log("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_err("vacc_host_init() unknown inst type %d\n", vacc_host->insttype);
+        rn_assert(0);
         return -1;
     }
 
@@ -711,7 +714,7 @@ static int rn_socket_mngr_uninit(struct _vacc_host *vacc_host, void *opaque)
 }
 
 
-int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize)
+int rn_socket_mngr_listen_add_ex(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, protocol_abstract_t *proto_abs, vacc_host_cb_recv cb_recv)
 {
     rn_socket_public_t *socket;
     vacc_host_t *vacc_host;
@@ -731,7 +734,12 @@ int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, u
     param.cb_put = rn_socket_mngr_put;
     param.cb_init = rn_socket_mngr_init;
     param.cb_uninit = rn_socket_mngr_uninit;
-    param.proto_abs.enable = 0;
+    param.cb_recv = cb_recv;
+    if (proto_abs) {
+        param.proto_abs = *proto_abs;
+    } else {
+        param.proto_abs.enable = 0;
+    }
     param.sendbuf_size = sock_bufsize;
     param.recvbuf_size = sock_bufsize;
     param.opaque = mngr;
@@ -751,7 +759,12 @@ int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, u
     return RN_RETVALUE_OK;
 }
 
-int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket)
+int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize)
+{
+    return rn_socket_mngr_listen_add_ex(mngr, ip, port, sock_bufsize, NULL, NULL);
+}
+
+int rn_socket_mngr_connect_ex(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket, protocol_abstract_t *proto_abs, vacc_host_cb_recv cb_recv)
 {
     rn_socket_public_t *socket;
     vacc_host_t *vacc_host;
@@ -771,7 +784,12 @@ int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint
     param.cb_put = rn_socket_mngr_put;
     param.cb_init = rn_socket_mngr_init;
     param.cb_uninit = rn_socket_mngr_uninit;
-    param.proto_abs.enable = 0;
+    param.cb_recv = cb_recv;
+    if (proto_abs) {
+        param.proto_abs = *proto_abs;
+    } else {
+        param.proto_abs.enable = 0;
+    }
     param.sendbuf_size = sock_bufsize;
     param.recvbuf_size = sock_bufsize;
     param.opaque = mngr;
@@ -793,6 +811,11 @@ int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint
     }
 
     return RN_RETVALUE_OK;
+}
+
+int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket)
+{
+    return rn_socket_mngr_connect_ex(mngr, ip, port, sock_bufsize, connected_socket, NULL, NULL);
 }
 
 void rn_socket_mngr_dump(rn_socket_mngr_t *mngr, rn_socket_mngr_dump_socket dump_fn, void *dump_p)

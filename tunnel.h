@@ -136,11 +136,13 @@ typedef struct {
 
     struct {
         uint64_t            send_no_enough_credit;
+        uint64_t            recv_pkt, recv_bytes;
         uint64_t            send_pkt, send_bytes, send_pkt_not_complete;
 
         uint64_t            head_not_complete;
         uint64_t            body_not_complete;
 
+        uint64_t            drop_transport_can_not_send;
         uint64_t            drop_transport_not_in_bundle;
         uint64_t            drop_agent_conn_not_ready;
 

@@ -2,11 +2,39 @@
 
 #define RN_MAX_EVENTS                   1024
 
+#ifdef RN_CONFIG_EPOLL_WORKER_CHECK
+int epoll_thread_is_inst_in_epoll(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *epoll_inst)
+{
+    rn_epoll_inst_t *p;
+
+    RN_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
+        if (p == epoll_inst) {
+            rn_assert(epoll_thread == epoll_inst->epoll_thread);
+            return 1;
+        }
+    }
+    // rn_log("epoll_inst(%p fd %d) is not in epoll_thread linklist\n", epoll_inst, epoll_inst->fd);
+    return 0;
+}
+int epoll_thread_is_fd_in_epoll(rn_epoll_thread_t *epoll_thread, int fd)
+{
+    rn_epoll_inst_t *p;
+
+    RN_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
+        if (p->fd == fd) {
+            return 1;
+        }
+    }
+    // rn_log("epoll_inst(%p fd %d) is not in epoll_thread linklist\n", epoll_inst, epoll_inst->fd);
+    return 0;
+}
+#endif
+
 static void *epoll_thread_proc(void *arg)
 {
     rn_epoll_thread_t *epoll_thread = (rn_epoll_thread_t *)arg;
     struct epoll_event events[RN_MAX_EVENTS];
-    int idx, fds;
+    int i, idx, fds;
     rn_epoll_inst_t *epoll_inst;
 
     while (epoll_thread->shutdown == 0) {
@@ -18,8 +46,32 @@ static void *epoll_thread_proc(void *arg)
         } else {
             for (idx = 0; idx < fds; idx++) {
                 epoll_inst = (rn_epoll_inst_t *)events[idx].data.ptr;
+                if (epoll_inst == NULL) {
+                    continue;
+                }
 
+                if (epoll_inst->already_in_epoll == 0) {
+                    /* this epoll inst already remove from epoll, just ignore it */
+                    continue;
+                }
+#ifdef RN_CONFIG_EPOLL_WORKER_CHECK
+                rn_assert(epoll_thread_is_inst_in_epoll(epoll_thread, epoll_inst) == 1);
+#endif
                 epoll_inst->epoll_inst_cb(epoll_inst);
+
+                if (epoll_thread->ready_fd_list_need_check) {
+                    /* check epoll, it maybe already removed */
+                    for (i = (idx + 1); i < fds; i++) {
+                        epoll_inst = (rn_epoll_inst_t *)events[i].data.ptr;
+                        if (epoll_inst == NULL) {
+                            continue;
+                        }
+                        if (epoll_inst->already_in_epoll == 0) {
+                            events[i].data.ptr = NULL;
+                        }
+                    }
+                    epoll_thread->ready_fd_list_need_check = 0;
+                }
             }
         }
     }
@@ -84,22 +136,11 @@ int rn_epoll_thread_destroy(rn_epoll_thread_t *epoll_thread)
 
 static int rn_epoll_thread_reg_inst_ex(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *epoll_inst, int is_edge_trigger)
 {
-    rn_epoll_inst_t *p;
     struct epoll_event event;
-    int ret, finded = 0;
+    int ret;
 
-    RN_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
-        if (p == epoll_inst) {
-            finded = 1;
-            break;
-        }
-    }
-    if (finded == 1) {
-        rn_assert(epoll_inst->already_in_epoll == 1);
-        /* already in epoll */
-        return RN_RETVALUE_OK;
-    }
-
+    rn_assert(epoll_thread_is_inst_in_epoll(epoll_thread, epoll_inst) == 0);
+    rn_assert(epoll_thread_is_fd_in_epoll(epoll_thread, epoll_inst->fd) == 0);
     rn_assert(epoll_inst->already_in_epoll == 0);
 
     epoll_inst->epoll_thread = epoll_thread;
@@ -111,6 +152,7 @@ static int rn_epoll_thread_reg_inst_ex(rn_epoll_thread_t *epoll_thread, rn_epoll
     ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_ADD, epoll_inst->fd, &event);
     if (ret) {
         rn_err("epoll_ctl add faild %d\n", ret);
+        rn_assert(0);
         return RN_RETVALUE_ERR;
     }
 
@@ -130,26 +172,15 @@ int rn_epoll_thread_reg_inst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *e
 
 int rn_epoll_thread_reg_uninst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t *epoll_inst)
 {
-    rn_epoll_inst_t *p;
     struct epoll_event event;
-    int ret, finded = 0;
+    int ret;
 
     if (epoll_inst->epoll_thread != epoll_thread) {
         return RN_RETVALUE_INVALID_PARAM;
     }
 
-    RN_LISTENTRYWALK(p, &(epoll_thread->inst_list_head), node) {
-        if (p == epoll_inst) {
-            finded = 1;
-            break;
-        }
-    }
-    if (finded == 0) {
-        rn_assert(epoll_inst->already_in_epoll == 0);
-        /* already removed */
-        return RN_RETVALUE_OK;
-    }
-
+    rn_assert(epoll_thread_is_inst_in_epoll(epoll_thread, epoll_inst) == 1);
+    rn_assert(epoll_thread_is_fd_in_epoll(epoll_thread, epoll_inst->fd) == 1);
     rn_assert(epoll_inst->already_in_epoll == 1);
 
     event.data.ptr = epoll_inst;
@@ -157,11 +188,15 @@ int rn_epoll_thread_reg_uninst(rn_epoll_thread_t *epoll_thread, rn_epoll_inst_t 
     ret = epoll_ctl(epoll_thread->epoll_fd, EPOLL_CTL_DEL, epoll_inst->fd, &event);
     if (ret) {
         rn_err("epoll_ctl del faild %d\n", ret);
+        rn_assert(0);
+        return RN_RETVALUE_ERR;
     }
 
     rn_listdel(&(epoll_inst->node));
     epoll_inst->already_in_epoll = 0;
     epoll_thread->n_inst--;
+
+    epoll_thread->ready_fd_list_need_check = 1;
 
     return RN_RETVALUE_OK;
 }
@@ -181,6 +216,7 @@ static void rn_timerfw_public_cb(rn_epoll_inst_t *epoll_inst)
     ret = read(timer_inst->timer_fd, &exp, sizeof(uint64_t));
     if (ret != sizeof(uint64_t)) {
         rn_err("read return invalid len %d, %d(%s)\n", ret, errno, strerror(errno));
+        while (1) usleep(100000);
     } else {
         timer_inst->cb(timer_inst->cb_param);
     }

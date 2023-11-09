@@ -34,5 +34,18 @@ a)协商密钥
 8.218.56.30
 
 # 测试
+--mode=server
+--testbench=0:
+普通server模式,接收报文并反弹
+--testbench=1:
+接收连接,会弹报文,随机断链
+
+--mode=client
+--testbench=0:
+普通client模式,发送随机长度报文,接收返回值并校验正确性
+--testbench=1:
+随机发起链接,发送随机长度报文,接收返回值并校验正确性,随机断链
+
+
 ./rottenNut --testbench=0 --mode=server --local_agent_port_list=3000
 ./rottenNut --testbench=0 --mode=client --local_agent_port_list=3000 --len=10000000

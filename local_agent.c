@@ -21,24 +21,24 @@ static void rn_agent_conn_dump_cb(rn_socket_public_t *socket, void *dump_p)
         return;
     }
 
-    rn_printf("\t\t\agent_conn id %d, peer agent conn id %d, state %d, session_data_idx %ld, bundle_id %d, recv_fifo tail %d head %d\n"
+    rn_printf("\t\t\tagent_conn id %d, fd %d, peer agent conn id %d, state %d, bundle_id %d, session_data_idx %ld, recv_fifo tail %d head %d\n"
         "\t\t\t stat:\n"
         "\t\t\tsession_not_ok %ld\n"
         "\t\t\trecv_fifo_full %ld\n"
         "\t\t\tno_free_pkb %ld\n"
-        "\t\t\tsend_pkt %ld\n"
-        "\t\t\tsend_bytes %ld\n"
+        "\t\t\trecv_pkt %ld, recv_bytes %ld\n"
+        "\t\t\tsend_pkt %ld, send_bytes %ld\n"
         "\t\t\tsend_pkt_not_complete %ld\n"
         "\t\t\tvacc_send_err %ld\n"
         "\t\t\tvacc_recv_err %ld\n"
         "\t\t\tdest_transport_send_fifo_full %ld\n",
-        agent_conn->local_agent_conn_id, agent_conn->peer_agent_conn_id,
+        agent_conn->local_agent_conn_id, agent_conn->socket.vacc_host.sock_fd, agent_conn->peer_agent_conn_id,
         agent_conn->agent_conn_state, agent_conn->bundle_id, agent_conn->session_data_idx, agent_conn->recv_fifo->tail, agent_conn->recv_fifo->head,
         agent_conn->stat.session_not_ok,
         agent_conn->stat.recv_fifo_full,
         agent_conn->stat.no_free_pkb,
-        agent_conn->stat.send_pkt,
-        agent_conn->stat.send_bytes,
+        agent_conn->stat.recv_pkt, agent_conn->stat.recv_bytes,
+        agent_conn->stat.send_pkt, agent_conn->stat.send_bytes,
         agent_conn->stat.send_pkt_not_complete,
         agent_conn->stat.vacc_send_err,
         agent_conn->stat.vacc_recv_err,
@@ -142,7 +142,7 @@ static int rn_agent_conn_dispatch(rn_local_agent_t *local_agent, rn_local_agent_
         transport_id = rn_tunnel_bundle_transport_select(local_agent->tunnel, agent_conn->bundle_id);
         transport = rn_tunnel_get_transport(local_agent->tunnel, transport_id);
 
-        if (RN_GPFIFO_CUR_LEFT(transport->send_fifo) < RN_CONFIG_TRANSPORT_SEND_FIFO_CONTROL_PKT_QUOTA) {   
+        if (RN_GPFIFO_CUR_LEFT(transport->send_fifo) < RN_CONFIG_TRANSPORT_SEND_FIFO_CONTROL_PKT_QUOTA) {
             /* can't do dispatch */
             agent_conn->stat.dest_transport_send_fifo_afull++;
             break;
@@ -181,6 +181,8 @@ static void rn_agent_conn_reset(rn_local_agent_t *local_agent, rn_local_agent_co
         rn_assert(pkb != NULL);
         rn_assert(rn_pkb_pool_put_pkb(local_agent->pkb_pool, pkb) == RN_RETVALUE_OK);
     }
+    rn_assert(RN_GPFIFO_ISEMPTY(agent_conn->recv_fifo));
+    agent_conn->recv_fifo->tail = agent_conn->recv_fifo->head = 0;
 
     /* drain recv reorder buffer */
     rn_assert(agent_conn->session_pkt_reorder != NULL);
@@ -259,6 +261,8 @@ static void rn_agent_conn_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
         ((uint32_t *)RN_PKB_HEAD(pkb))[0], ((uint32_t *)RN_PKB_HEAD(pkb))[1], ((uint32_t *)RN_PKB_HEAD(pkb))[2], ((uint32_t *)RN_PKB_HEAD(pkb))[3]);
 
     /* recv_buff enqueue */
+    agent_conn->stat.recv_bytes += pkb->cur_len;
+    agent_conn->stat.recv_pkt++;
     rn_assert(rn_gpfifo_enqueue_p(agent_conn->recv_fifo, pkb) == RN_RETVALUE_OK);
 
     rn_agent_conn_dispatch(local_agent, agent_conn);
@@ -430,7 +434,11 @@ static int rn_agent_conn_init(rn_socket_mngr_t *mngr, rn_socket_public_t *socket
 
         if (socket->vacc_host.insttype == VACC_HOST_INSTTYPE_SERVER_INST) {
             /* attach agent_conn to bundle, only has bundle 0 */
-            rn_tunnel_bundle_attach_agent_conn(local_agent->tunnel, 0, agent_conn);
+            ret = rn_tunnel_bundle_attach_agent_conn(local_agent->tunnel, 0, agent_conn);
+            if (ret != RN_RETVALUE_OK) {
+                rn_log("bundle 0 is not valid.\n");
+                vacc_host_destroy(&(socket->vacc_host));
+            }
 
             if (rn_agent_conn_new_connect(local_agent, agent_conn) != RN_RETVALUE_OK) {
                 vacc_host_destroy(&(socket->vacc_host));

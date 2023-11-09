@@ -8,26 +8,28 @@ static void rn_tunnel_transport_dump_cb(rn_socket_public_t *socket, void *dump_p
         return;
     }
 
-    rn_printf("\t\t\ttransport id %d, bundle_id %d, state %d, send_fifo tail %d head %d\n"
+    rn_printf("\t\t\ttransport id %d, fd %d, bundle_id %d, state %d, send_fifo tail %d head %d\n"
         "\t\t\t stat:\n"
         "\t\t\tsend_no_enough_credit %ld\n"
-        "\t\t\tsend_pkt %ld\n"
-        "\t\t\tsend_bytes %ld\n"
+        "\t\t\trecv_pkt %ld, recv_bytes %ld\n"
+        "\t\t\tsend_pkt %ld, send_bytes %ld\n"
         "\t\t\tsend_pkt_not_complete %ld\n"
         "\t\t\thead_not_complete %ld\n"
         "\t\t\tbody_not_complete %ld\n"
+        "\t\t\tdrop_transport_can_not_send %ld\n"
         "\t\t\tdrop_transport_not_in_bundle %ld\n"
         "\t\t\tdrop_agent_conn_not_ready %ld\n"
         "\t\t\tvacc_send_err %ld\n"
         "\t\t\tvacc_recv_err %ld\n",
-        transport->transport_id, transport->belongs_to_bundle_id,
+        transport->transport_id, transport->socket.vacc_host.sock_fd, transport->belongs_to_bundle_id,
         transport->transport_state, transport->send_fifo->tail, transport->send_fifo->head,
         transport->stat.send_no_enough_credit,
-        transport->stat.send_pkt,
-        transport->stat.send_bytes,
+        transport->stat.recv_pkt, transport->stat.recv_bytes,
+        transport->stat.send_pkt, transport->stat.send_bytes,
         transport->stat.send_pkt_not_complete,
         transport->stat.head_not_complete,
         transport->stat.body_not_complete,
+        transport->stat.drop_transport_can_not_send,
         transport->stat.drop_transport_not_in_bundle,
         transport->stat.drop_agent_conn_not_ready,
         transport->stat.vacc_send_err,
@@ -169,7 +171,7 @@ static int tunnel_proc_recv_session_new(rn_tunnel_t *tunnel, rn_transport_t *tra
     agent_conn = RN_GETCONTAINER(connected_socket, rn_local_agent_conn_t, socket);
 
     /* attach agent_conn to bundle which has this transport */
-    rn_tunnel_bundle_attach_agent_conn(tunnel, bundle_id, agent_conn);
+    rn_assert(rn_tunnel_bundle_attach_agent_conn(tunnel, bundle_id, agent_conn) == RN_RETVALUE_OK);
     /* set peer agent_conn id */
     rn_assert(agent_conn->peer_agent_conn_id == RN_AGENT_CONN_ID_INVALID);
     agent_conn->peer_agent_conn_id = session_new_req->src_agent_conn_id;
@@ -241,7 +243,8 @@ static int tunnel_proc_recv_session_new_ack(rn_tunnel_t *tunnel, rn_transport_t 
 
     /*  */
     if (session_new_resp->ret != RN_RETVALUE_OK) {
-        rn_err("session create return %d, close local agent conn\n", session_new_resp->ret);
+        rn_err("agent_conn id %d, session create return %d, close local agent conn\n",
+            agent_conn->local_agent_conn_id, session_new_resp->ret);
         vacc_host_destroy(&(agent_conn->socket.vacc_host));
         return RN_RETVALUE_OK;
     }
@@ -436,6 +439,8 @@ static void rn_transport_reset(rn_tunnel_t *tunnel, rn_transport_t *transport)
         rn_assert(pkb != NULL);
         rn_assert(rn_pkb_pool_put_pkb(tunnel->pkb_pool, pkb) == RN_RETVALUE_OK);
     }
+    rn_assert(RN_GPFIFO_ISEMPTY(transport->send_fifo));
+    transport->send_fifo->tail = transport->send_fifo->head = 0;
 
     /* need to free pkb */
     if (transport->cur_proc_frame) {
@@ -595,6 +600,10 @@ static void rn_transport_epoll_inst_cb(rn_epoll_inst_t *epoll_inst)
         return;
     }
 
+    /* one pkt recv done */
+    transport->stat.recv_bytes += transport->cur_proc_frame->cur_len;
+    transport->stat.recv_pkt++;
+
     rn_assert(transport->cur_proc_frame->cur_len == transport->frame_head->align_len);
 
     /* do aes dechiper for frame body */
@@ -631,7 +640,7 @@ __pkt_recv_err:
 /*
  * try to drain transport send fifo
  */
-static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *transport)
+static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *transport, int force)
 {
     int send_len_permit, ret;
     rn_pkb_t *pkb;
@@ -646,12 +655,12 @@ static void rn_transport_send_fifo_drain(rn_tunnel_t *tunnel, rn_transport_t *tr
         if (pkb == NULL) {
             break;
         }
-        if (pkb->pkb_flag & PN_PKB_FLAG_NEED_BKT_TOKEN) {
-            /* calc credit */
-            send_len_permit = single_token_bucket_consume(&(transport->send_stb), pkb->cur_len);
-        } else {
+        if (((pkb->pkb_flag & PN_PKB_FLAG_NEED_BKT_TOKEN) == 0) || force) {
             /* don't comsume bucket token, just send */
             send_len_permit = pkb->cur_len;
+        } else {
+            /* calc credit */
+            send_len_permit = single_token_bucket_consume(&(transport->send_stb), pkb->cur_len);
         }
 
         if (send_len_permit) {
@@ -709,15 +718,19 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     uint32_t i, real_len = pkb->cur_len;
     rn_transport_frame_head_t *header;
     uint8_t key_buf[RN_AES_KEY_LEN];
+    int force = 0;
 
     if (!rn_transport_can_send(transport)) {
         rn_warn("transport_id %d, drop packet type %s, transport->transport_state %d\n",
             transport->transport_id, rn_transport_frame_type_str(type), transport->transport_state);
         rn_assert(rn_pkb_pool_put_pkb(tunnel->pkb_pool, pkb) == RN_RETVALUE_OK);
+        transport->stat.drop_transport_can_not_send++;
         return RN_RETVALUE_OK;
     }
-
-    rn_transport_send_fifo_drain(tunnel, transport);
+    if (type != RN_TRANSPORT_FRAME_TYPE_DATA) {
+        force = 1;
+    }
+    rn_transport_send_fifo_drain(tunnel, transport, force);
 
     if (RN_GPFIFO_ISFULL(transport->send_fifo)) {
         return RN_RETVALUE_NOENOUGHSPACE;
@@ -763,7 +776,7 @@ int rn_transport_send(rn_tunnel_t *tunnel, rn_transport_t *transport, rn_pkb_t *
     rn_dbg(RUN_DBGFLAG_TRANSPORT_DBG, "transport_id %d, type %s align_len 0x%x, real_len 0x%x\n",
         transport->transport_id, rn_transport_frame_type_str(type), pkb->cur_len, real_len);
 
-    rn_transport_send_fifo_drain(tunnel, transport);
+    rn_transport_send_fifo_drain(tunnel, transport, force);
 
     if (type == RN_TRANSPORT_FRAME_TYPE_UPDATE_KEY) {
         /* update transport tx key */
@@ -782,7 +795,7 @@ static int rn_transport_polling(rn_tunnel_t *tunnel, rn_transport_t *transport, 
     single_token_bucket_insert(&(transport->send_stb), n_token);
 
     /* try to drain send fifo */
-    rn_transport_send_fifo_drain(tunnel, transport);
+    rn_transport_send_fifo_drain(tunnel, transport, 0);
 
     return RN_RETVALUE_OK;
 }
@@ -1028,9 +1041,12 @@ int rn_tunnel_bundle_attach_agent_conn(rn_tunnel_t *tunnel, rn_bundle_id bundle_
 {
     rn_bundle_t *bundle = &(tunnel->bundle_list[bundle_id]);
 
+    if (bundle->valid == 0) {
+        return RN_RETVALUE_NO_SUCH_BUNDLE;
+    }
+
     rn_assert(agent_conn->bundle_id == RN_BUNDLE_ID_INVALID);
     rn_assert((bundle_id >= 0) && (bundle_id < RN_CONFIG_TUNNEL_BUNDLE_MAX));
-    rn_assert(bundle->valid == 1);
 
 #ifdef RN_CONFIG_AGENT_CONN_CHECK
     /* check agent_conn already in bundle */

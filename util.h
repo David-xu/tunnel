@@ -515,7 +515,9 @@ typedef void (*rn_socket_mngr_dump_socket)(rn_socket_public_t *socket, void *dum
 
 int rn_socket_mngr_create(rn_socket_mngr_t *mngr, rn_socket_public_t *socket_list, uint32_t unit_num, uint32_t unit_size, rn_socket_init_cb socket_init, rn_socket_uninit_cb socket_uninit, void *cb_param);
 int rn_socket_mngr_destroy(rn_socket_mngr_t *mngr);
+int rn_socket_mngr_listen_add_ex(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, protocol_abstract_t *proto_abs, vacc_host_cb_recv cb_recv);
 int rn_socket_mngr_listen_add(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize);
+int rn_socket_mngr_connect_ex(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket, protocol_abstract_t *proto_abs, vacc_host_cb_recv cb_recv);
 int rn_socket_mngr_connect(rn_socket_mngr_t *mngr, char *ip, uint16_t port, uint32_t sock_bufsize, rn_socket_public_t **connected_socket);
 void rn_socket_mngr_dump(rn_socket_mngr_t *mngr, rn_socket_mngr_dump_socket dump_fn, void *dump_p);
 
