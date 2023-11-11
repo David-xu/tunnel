@@ -1,18 +1,5 @@
 #include "pub.h"
 
-struct {
-    uint64_t            session_not_ok;
-    uint64_t            recv_fifo_full;
-    uint64_t            no_free_pkb;
-
-    uint64_t            send_pkt, send_bytes, send_pkt_not_complete;
-
-    uint64_t            vacc_send_err, vacc_recv_err;
-
-    uint64_t            dest_transport_send_fifo_afull;
-} stat;
-
-
 static void rn_agent_conn_dump_cb(rn_socket_public_t *socket, void *dump_p)
 {
     rn_local_agent_conn_t *agent_conn = RN_GETCONTAINER(socket, rn_local_agent_conn_t, socket);

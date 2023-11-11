@@ -3,7 +3,7 @@
 
 running_ctx_t g_ctx;
 
-char * const short_options="hv";
+char * const short_options="hvd";
 
 enum {
     ARGPARAM_BEGIN = 256,
@@ -21,6 +21,7 @@ enum {
 struct option long_options[]={
     {"help", 0, NULL, 'h'},
     {"version", 0, NULL, 'v'},
+    { "daemon", 0, NULL, 'd'},
     {"mode", 1, NULL, ARGPARAM_MODE},
     {"serv_ip", 1, NULL, ARGPARAM_SERV_IP},
     {"port_list", 1, NULL, ARGPARAM_PORT_LIST},
@@ -37,6 +38,7 @@ static void rottenut_usage(char* progname)
     printf("usage: %s" "[--help|-h]|[--version|-v]" "\n", progname);
     printf("Commonly arguments:\n");
     printf("     --version|-v                   show the version.\n");
+    printf("     --daemon|-d                    run in daemon mode\n");
     printf("     --mode                         --mode=[server/client]\n");
     printf("     --serv_ip                      server ip address\n");
     printf("     --port_list                    tcp port list\n");
@@ -46,6 +48,159 @@ static void rottenut_usage(char* progname)
     printf("     --testbench=[test work mode]   testbench, set testbench mode\n");
     printf("     --transport_send_bps           send bps(bytes per second)\n");
     printf("     --port_agent_offset            server port = client port + port_agent_offset\n");
+}
+
+static int fds[2];
+
+#define RN_CONFIG_LOG_FILE "/var/log/rottenNut.log"
+
+void set_fd_cloexec(int fd)
+{
+    int f;
+    f = fcntl(fd, F_GETFD);
+    fcntl(fd, F_SETFD, f | FD_CLOEXEC);
+}
+
+void os_daemonize(void)
+{
+    pid_t pid;
+
+    if (pipe(fds) == -1)
+        exit(1);
+
+    pid = fork();
+    if (pid > 0) {
+        uint8_t status;
+        ssize_t len;
+
+        close(fds[1]);
+
+again:
+        len = read(fds[0], &status, 1);
+        if (len == -1 && (errno == EINTR))
+            goto again;
+
+        if (len != 1)
+            exit(1);
+        else if (status == 1) {
+            fprintf(stderr, "Could not acquire pidfile: %s\n", strerror(errno));
+            exit(1);
+        } else
+            exit(0);
+    } else if (pid < 0)
+        exit(1);
+
+    close(fds[0]);
+    set_fd_cloexec(fds[1]);
+
+    setsid();
+
+    pid = fork();
+    if (pid > 0)
+        exit(0);
+    else if (pid < 0)
+        exit(1);
+
+    umask(027);
+
+    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+}
+
+/*
+ * Opens a file with FD_CLOEXEC set
+ */
+int open_cloexec(const char *name, int flags, ...)
+{
+    int ret;
+    int mode = 0;
+
+    if (flags & O_CREAT) {
+        va_list ap;
+
+        va_start(ap, flags);
+        mode = va_arg(ap, int);
+        va_end(ap);
+    }
+
+#ifdef O_CLOEXEC
+    ret = open(name, flags | O_CLOEXEC, mode);
+#else
+    ret = open(name, flags, mode);
+    if (ret >= 0) {
+        set_fd_cloexec(ret);
+    }
+#endif
+
+#ifdef O_DIRECT
+    if (ret == -1 && errno == EINVAL && (flags & O_DIRECT)) {
+        fprintf(stderr, "file system may not support O_DIRECT");
+        errno = EINVAL; /* in case it was clobbered */
+    }
+#endif /* O_DIRECT */
+
+    return ret;
+}
+
+int set_log_file(void)
+{
+    int fd;
+    int log_fd;
+    FILE *fp = NULL;
+
+    fd = open_cloexec("/dev/null", O_RDWR);
+    if (fd == -1)
+        return -1;
+
+    dup2(fd, 0);
+    close(fd);
+
+    fp = fopen(RN_CONFIG_LOG_FILE, "a+");
+    if (fp == NULL) {
+        printf("open log file failed\n");
+        return -2;
+    }
+
+    setlinebuf(fp);
+    log_fd = fileno(fp);
+
+    setlinebuf(stdout);
+    setlinebuf(stderr);
+    close(1);
+    close(2);
+
+    if ((dup2(log_fd, 1) < 0) || (dup2(log_fd, 2) < 0)) {
+        printf("redirect stdout & stderr failed\n");
+        return -3;
+    }
+    close(log_fd);
+
+    return 0;
+}
+
+void os_setup_post(void)
+{
+    uint8_t status = 0;
+    ssize_t len;
+
+again1:
+    len = write(fds[1], &status, 1);
+    if (len == -1 && (errno == EINTR))
+        goto again1;
+
+    if (len != 1)
+        exit(1);
+
+    if (chdir("/")) {
+        perror("not able to chdir to /");
+        exit(1);
+    }
+
+    if (set_log_file() < 0) {
+        fprintf(stderr, "set log file failed\n");
+        exit(2);
+    }
 }
 
 static void termsig_handler(int signal, siginfo_t *info, void *c)
@@ -199,7 +354,7 @@ static void cmd_loop(void)
 
 int main(int argc, char *argv[])
 {
-    int ret, cmdtype, longp_idx, i, testbench = 0, testbench_mode = 0;
+    int ret, cmdtype, longp_idx, i, daemonize = 0, testbench = 0, testbench_mode = 0;
     uint64_t len;
 
     /* set default key */
@@ -212,6 +367,9 @@ int main(int argc, char *argv[])
             rottenut_usage(argv[0]);
             return 0;
         case 'v':
+            break;
+        case 'd':
+            daemonize = 1;
             break;
         case ARGPARAM_MODE:
             if (strcmp(optarg, "server") == 0) {
@@ -299,6 +457,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (daemonize) {
+        os_daemonize();
+        os_setup_post();
+    }
+
     rn_log("serv_ip %s, n_port %d:\n", g_ctx.serv_ip, g_ctx.n_port);
     for (i = 0; i < g_ctx.n_port; i++) {
         rn_log("\t\t%d\n", g_ctx.port_list[i]);
@@ -359,8 +522,12 @@ int main(int argc, char *argv[])
     rn_assert(g_ctx.transport_polling_timer_id >= 0);
 
     g_ctx.running = 1;
-    while (g_ctx.running) {
-        cmd_loop();
+    if (daemonize) {
+        while (g_ctx.running) usleep(1000000);
+    } else {
+        while (g_ctx.running) {
+            cmd_loop();
+        }
     }
 
     rn_timerfw_del_timer(&(g_ctx.epoll_thread), g_ctx.transport_polling_timer_id);

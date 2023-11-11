@@ -14,6 +14,7 @@
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #ifdef WITH_OPENSSL_LIB
 #include <openssl/aes.h>
 #else
