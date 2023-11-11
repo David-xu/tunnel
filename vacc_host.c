@@ -520,8 +520,7 @@ static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host, uint
         } else if (errno == EAGAIN) {
             /**/
         } else {
-            printf("read return %d, dead.\n", ret);
-            while (1) usleep(100000);
+            printf("read return %d, errno %d dead.\n", ret, errno);
             return VACC_HOST_RET_READMSG_FAILD;
         }
     }
