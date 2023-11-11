@@ -475,10 +475,12 @@ static int rn_agent_conn_uninit(rn_socket_mngr_t *mngr, rn_socket_public_t *sock
     case VACC_HOST_INSTTYPE_CLIENT_INST:
         rn_assert(agent_conn->agent_conn_state != RN_AGENT_CONN_STATE_UNINIT);
         /* remove from epoll thread main loop */
-        ret = rn_epoll_thread_reg_uninst(local_agent->epoll_thread, &(agent_conn->epoll_inst));
-        if (ret != RN_RETVALUE_OK) {
-            /* todo: */
-            rn_assert(0);
+        if (agent_conn->epoll_inst.already_in_epoll) {
+            ret = rn_epoll_thread_reg_uninst(local_agent->epoll_thread, &(agent_conn->epoll_inst));
+            if (ret != RN_RETVALUE_OK) {
+                /* todo: */
+                rn_assert(0);
+            }
         }
 
         rn_log("agent conn id %d %s close.\n", agent_conn->local_agent_conn_id, agent_conn->passive_close == 1 ? "passive" : "active");
