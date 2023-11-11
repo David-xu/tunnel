@@ -87,6 +87,7 @@ typedef struct {
 typedef struct _vacc_host {
     vacc_host_transtype_e       transtype;
     vacc_host_insttype_e        insttype;
+    int                         removing;
 
     union {
         struct {

@@ -545,6 +545,8 @@ int rn_socket_mngr_create(rn_socket_mngr_t *mngr, rn_socket_public_t *socket_lis
     for (i = 0; i < unit_num; i++) {
         socket = RN_SOCKET_ENTRY(mngr, i);
         socket->conn_id = i;
+        memset(&socket->vacc_host, 0, sizeof(socket->vacc_host));
+        socket->vacc_host.sock_fd = -1;
         rn_gpfifo_enqueue_p(mngr->free_fifo, socket);
     }
 

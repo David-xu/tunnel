@@ -643,6 +643,11 @@ int vacc_host_destroy(vacc_host_t *vacc_host)
         return VACC_HOST_RET_INVALID_PARAM;
     }
 
+    if (vacc_host->removing) {
+        return VACC_HOST_RET_OK;
+    }
+    vacc_host->removing = 1;
+
     opaque = vacc_host->opaque;
     cb_put = vacc_host->cb_put;
 
@@ -684,6 +689,7 @@ int vacc_host_destroy(vacc_host_t *vacc_host)
 
     cb_put(vacc_host, opaque);
 
+    vacc_host->removing = 0;
     vacc_host->sock_fd = -1;
 
     return ret;
@@ -727,9 +733,6 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
  */
 static void vacc_host_disconnect(vacc_host_t *vacc_host)
 {
-    if (vacc_host->sock_fd < 0) {
-        return;
-    }
     vacc_host_destroy(vacc_host);
 }
 

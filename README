@@ -49,3 +49,8 @@ a)协商密钥
 
 ./rottenNut --testbench=0 --mode=server --local_agent_port_list=3000
 ./rottenNut --testbench=0 --mode=client --local_agent_port_list=3000 --len=10000000
+
+
+# refs:
+# android vpnservice
+https://github.com/asdzheng/vpnservices
