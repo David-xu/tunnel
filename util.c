@@ -211,8 +211,13 @@ int rn_printf(const char *fmt, ...)
     n += vsnprintf(tmp + n, sizeof(tmp) - n, fmt, args);
     va_end(args);
 
+#ifdef RN_ANDROID_ENV
+#include <android/log.h>
+#define VACC_HOST_PRINT(...)        __android_log_print(ANDROID_LOG_DEBUG, "rn_log", __VA_ARGS__)
+    VACC_HOST_PRINT("%s", tmp);
+#else
     printf("%s", tmp);
-
+#endif
     return n;
 }
 

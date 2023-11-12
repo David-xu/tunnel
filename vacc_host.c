@@ -1,5 +1,11 @@
 #include "vacc_host.h"
 
+#ifdef RN_ANDROID_ENV
+#include <android/log.h>
+#define VACC_HOST_PRINT(...)        __android_log_print(ANDROID_LOG_DEBUG, "rn_vacc", __VA_ARGS__)
+#else
+#define VACC_HOST_PRINT(...)        printf(__VA_ARGS__)
+#endif
 /* epoll helper */
 int helper_epoll_create(void)
 {
@@ -50,13 +56,13 @@ static int vacc_host_set_noblock_socket(vacc_host_t *vacc_host)
 
     int flags = fcntl(sockfd, F_GETFL, 0);
     if (flags == -1) {
-        printf("fd %d fcntl F_GETFL faild, errno %d\n", sockfd, errno);
+        VACC_HOST_PRINT("fd %d fcntl F_GETFL faild, errno %d\n", sockfd, errno);
         return VACC_HOST_RET_ERR;
     }
 
     flags |= O_NONBLOCK;
     if (fcntl(sockfd, F_SETFL, flags) == -1) {
-        printf("fd %d fcntl F_SETFL faild, errno %d\n", sockfd, errno);
+        VACC_HOST_PRINT("fd %d fcntl F_SETFL faild, errno %d\n", sockfd, errno);
         return VACC_HOST_RET_ERR;
     }
 
@@ -107,7 +113,7 @@ static int vacc_host_create_tcp(vacc_host_t *vacc_host, const vacc_host_create_p
         vacc_host->sock_fd = accept(param->u.uds.server_listener->sock_fd, (struct sockaddr *)&cli_addr, (socklen_t *)&len);
         if (vacc_host->sock_fd > 0) {
             /* new connection */
-            // printf("new connection...\n");
+            // VACC_HOST_PRINT("new connection...\n");
         } else {
             return VACC_HOST_RET_ACCEPT_FAILD;
         }
@@ -254,7 +260,7 @@ static int vacc_host_create_uds(vacc_host_t *vacc_host, const vacc_host_create_p
         vacc_host->sock_fd = accept(param->u.uds.server_listener->sock_fd, (struct sockaddr*)&cli_un, (socklen_t *)&len);
         if (vacc_host->sock_fd > 0) {
             /* new connection */
-            // printf("new connection...\n");
+            // VACC_HOST_PRINT("new connection...\n");
         } else {
             return VACC_HOST_RET_ACCEPT_FAILD;
         }
@@ -344,19 +350,19 @@ retry:
         if ((errno == ECONNRESET) || (errno == EPIPE)) {
             return VACC_HOST_RET_PEERCLOSE;
         }
-        printf("##############  sendmsg() return faild, ret %d, errno %d\n", ret, errno);
+        VACC_HOST_PRINT("##############  sendmsg() return faild, ret %d, errno %d\n", ret, errno);
         return VACC_HOST_RET_SENDMSG_FAILD;
     }
     already_send += ret;
 
 #ifdef VACC_HOST_SEND_TO_COMPLETE
     if (already_send < len) {
-        printf("##############  sendmsg() return %d already_send %d len %d\n", ret, already_send, len);
+        VACC_HOST_PRINT("##############  sendmsg() return %d already_send %d len %d\n", ret, already_send, len);
         goto __send_more;
     }
 
     if (already_send != len) {
-        printf("##############  err already_send %d != len %d\n", already_send, len);
+        VACC_HOST_PRINT("##############  err already_send %d != len %d\n", already_send, len);
     }
 #endif
 
@@ -392,7 +398,7 @@ static int vacc_host_recv_data_normal_proto(vacc_host_t *vacc_host)
     int retry_cnt;
 
     already_recv_len = 0;
-    // printf("!!!!!!!!!!!!! 00 ############## already_recv_len %d\n", already_recv_len);
+    // VACC_HOST_PRINT("!!!!!!!!!!!!! 00 ############## already_recv_len %d\n", already_recv_len);
     need_recv_len = vacc_host->proto_abs.head_len;
     retry_cnt = 10000;
 
@@ -406,41 +412,41 @@ __retry_recv_head:
 
     ret = recvmsg(vacc_host->sock_fd, &msgh, MSG_DONTWAIT);
     if (ret == 0) {
-        // printf("**********   exit   01\n");
+        // VACC_HOST_PRINT("**********   exit   01\n");
         return VACC_HOST_RET_PEERCLOSE;
     } else if (ret < 0) {
         if ((errno == EINTR) || (errno == EAGAIN)) {
             usleep(100);
             goto __retry_recv_head;
         } else if ((errno == ECONNRESET) || (errno == EPIPE)) {
-            // printf("**********   exit   02\n");
+            // VACC_HOST_PRINT("**********   exit   02\n");
             /* peer close, just return 0 */
             return VACC_HOST_RET_PEERCLOSE;
         } else {
-            // printf("**********   exit   03, errno %d\n", errno);
+            // VACC_HOST_PRINT("**********   exit   03, errno %d\n", errno);
             return VACC_HOST_RET_READMSG_FAILD;
         }
     }
-    // printf("!!!!!!!!!!!!! 01 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
+    // VACC_HOST_PRINT("!!!!!!!!!!!!! 01 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
     already_recv_len += ret;
-    // printf("!!!!!!!!!!!!! 02 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
+    // VACC_HOST_PRINT("!!!!!!!!!!!!! 02 ############## already_recv_len %d, ret %d\n", already_recv_len, ret);
     if (already_recv_len != need_recv_len) {
         retry_cnt--;
         if (retry_cnt) {
-            printf("!!!!!!!!!!!!!! 12341234 123412341234 !!!!!!!!!!!!!!!! already_recv_len %d need_recv_len %d, ret %d, fd %d\n",
+            VACC_HOST_PRINT("!!!!!!!!!!!!!! 12341234 123412341234 !!!!!!!!!!!!!!!! already_recv_len %d need_recv_len %d, ret %d, fd %d\n",
                 already_recv_len, need_recv_len, ret, vacc_host->sock_fd);
             goto __retry_recv_head;
         } else {
-            printf("!!!!!!!!!!!!!! try too many times, recved_len %d need_recv_len %d\n", already_recv_len, need_recv_len);
+            VACC_HOST_PRINT("!!!!!!!!!!!!!! try too many times, recved_len %d need_recv_len %d\n", already_recv_len, need_recv_len);
             while (1) usleep(100000);
         }
     }
 #if 0
-    printf("!!!!!!!!!!!!!! 03 ################# ret %d ####### already_recv_len %d, fd %d\n",
+    VACC_HOST_PRINT("!!!!!!!!!!!!!! 03 ################# ret %d ####### already_recv_len %d, fd %d\n",
         ret, already_recv_len, vacc_host->sock_fd);
 #endif
     if (msgh.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
-        printf("!!!!!!!!!!!!!! msgh.msg_flags 0x%x\n", msgh.msg_flags);
+        VACC_HOST_PRINT("!!!!!!!!!!!!!! msgh.msg_flags 0x%x\n", msgh.msg_flags);
         while (1) usleep(100000);
         return VACC_HOST_RET_TRUNCATED;
     }
@@ -452,7 +458,7 @@ __retry_recv_head:
 
     if (payload_len) {
         if (payload_len > left_size) {
-            printf("!!!!!!!!!!!!!! payload_len %d left_size %d\n", payload_len, left_size);
+            VACC_HOST_PRINT("!!!!!!!!!!!!!! payload_len %d left_size %d\n", payload_len, left_size);
             while (1) usleep(100000);
             return VACC_HOST_RET_INVALID_MSGLEN;
         }
@@ -470,7 +476,7 @@ retry:
                 /* peer close, just return 0 */
                 return VACC_HOST_RET_PEERCLOSE;
             } else {
-                printf("!!!!!!!!!!!!!! read() ret %d \n", ret);
+                VACC_HOST_PRINT("!!!!!!!!!!!!!! read() ret %d \n", ret);
                 return VACC_HOST_RET_READMSG_FAILD;
             }
         }
@@ -482,7 +488,7 @@ retry:
             if (retry_cnt) {
                 goto retry;
             } else {
-                printf("!!!!!!!!!!!!!! try too many times, recved_len %d payload_len %d\n", already_recv_len, payload_len);
+                VACC_HOST_PRINT("!!!!!!!!!!!!!! try too many times, recved_len %d payload_len %d\n", already_recv_len, payload_len);
                 while (1) usleep(100000);
             }
         }
@@ -492,7 +498,7 @@ retry:
     if (vacc_host->cb_recv) {
         vacc_host->cb_recv(vacc_host, vacc_host->opaque, buf, vacc_host->proto_abs.head_len + payload_len);
     } else {
-        printf("vacc_host_recv_data_normal_proto() vacc_host->cb_recv == NULL.\n");
+        VACC_HOST_PRINT("vacc_host_recv_data_normal_proto() vacc_host->cb_recv == NULL.\n");
     }
 
     return VACC_HOST_RET_OK;
@@ -512,7 +518,7 @@ static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host, uint
         return VACC_HOST_RET_PEERCLOSE;
     } else if (ret < 0) {
         if (errno == EINTR) {
-            printf("dead ....... fd %d, errno EINTR\n", vacc_host->sock_fd);
+            VACC_HOST_PRINT("dead ....... fd %d, errno EINTR\n", vacc_host->sock_fd);
             while (1) usleep(100000);
         } else if (errno == ECONNRESET) {
             /* peer close, just return 0 */
@@ -520,7 +526,7 @@ static int vacc_host_recv_data_normal_without_proto(vacc_host_t *vacc_host, uint
         } else if (errno == EAGAIN) {
             /**/
         } else {
-            printf("read return %d, errno %d dead.\n", ret, errno);
+            VACC_HOST_PRINT("read return %d, errno %d dead.\n", ret, errno);
             return VACC_HOST_RET_READMSG_FAILD;
         }
     }
@@ -702,7 +708,7 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
 
     new_inst = vacc_host->cb_get(vacc_host, vacc_host->opaque);
     if (new_inst == NULL) {
-        printf("cb_get return NULL\n");
+        VACC_HOST_PRINT("cb_get return NULL\n");
         return VACC_HOST_RET_GET_INST_FAILD;
     }
     memset(&param, 0, sizeof(param));
@@ -720,7 +726,7 @@ static int vacc_host_new_connect(vacc_host_t *vacc_host)
     param.u.uds.server_listener = vacc_host;        /* attach to server listener instance */
     ret = vacc_host_create(new_inst, &param);
     if (ret != VACC_HOST_RET_OK) {
-        printf("vacc_host_create() return %d\n", ret);
+        VACC_HOST_PRINT("vacc_host_create() return %d\n", ret);
         vacc_host->cb_put(new_inst, vacc_host->opaque);
     }
 
@@ -808,7 +814,7 @@ int vacc_host_write(vacc_host_t *vacc_host, void *buf, uint32_t len)
     case VACC_HOST_INSTTYPE_CLIENT_INST:
         return vacc_host_send_data(vacc_host, buf, len, NULL);
     default:
-        printf("invalid insttype %d\n", vacc_host->insttype);
+        VACC_HOST_PRINT("invalid insttype %d\n", vacc_host->insttype);
         return VACC_HOST_RET_INVALID_INSTTYPE;
     }
 }
@@ -822,7 +828,7 @@ int vacc_host_write_ex(vacc_host_t *vacc_host, void *buf, uint32_t len, vacc_hos
     case VACC_HOST_INSTTYPE_SERVER_INST:
         return vacc_host_send_data(vacc_host, buf, len, addr);
     default:
-        printf("invalid insttype %d\n", vacc_host->insttype);
+        VACC_HOST_PRINT("invalid insttype %d\n", vacc_host->insttype);
         return VACC_HOST_RET_INVALID_INSTTYPE;
     }
 }
@@ -839,7 +845,7 @@ int vacc_host_read(vacc_host_t *vacc_host, uint8_t *buf, int buf_len)
         return vacc_host_recv_data(vacc_host, buf, buf_len);
         break;
     default:
-        printf("invalid insttype %d\n", vacc_host->insttype);
+        VACC_HOST_PRINT("invalid insttype %d\n", vacc_host->insttype);
         return VACC_HOST_RET_INVALID_INSTTYPE;
     }
 }
